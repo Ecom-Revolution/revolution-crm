@@ -93,7 +93,7 @@ export default function Login() {
                 type="email"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                placeholder="ex: admin@revolution-ecom.fr"
+                placeholder="contact.myseikomod@gmail.com"
                 required
                 className="input-base px-3 py-2.5 text-sm w-full"
               />
@@ -120,9 +120,8 @@ export default function Login() {
           </form>
 
           <div className="mt-5 p-3 rounded-xl bg-white/3 border border-white/7 text-xs text-white/35">
-            <div className="font-semibold text-white/50 mb-1">Accès démo</div>
-            <div>Email: <span className="text-white/60">n'importe quel email enregistré</span></div>
-            <div>Mot de passe: <span className="text-white/60">demo1234</span></div>
+            <div className="font-semibold text-white/50 mb-1">Accès sécurisé</div>
+            <div className="text-white/40">Connectez-vous avec vos identifiants Revolution Ecom.</div>
           </div>
 
           <div className="mt-4 text-xs text-white/30 flex justify-between">

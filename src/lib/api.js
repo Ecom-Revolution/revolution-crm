@@ -13,7 +13,19 @@ const LS = {
   set: (key, val) => localStorage.setItem(key, JSON.stringify(val)),
 }
 
+const DATA_VERSION = '2' // incrémenter pour forcer un reset complet
+
 const init = () => {
+  if (LS.get('crm_version', null) !== DATA_VERSION) {
+    // Reset complet — nouvelle version des données
+    localStorage.removeItem('crm_leads')
+    localStorage.removeItem('crm_users')
+    localStorage.removeItem('crm_activities')
+    localStorage.removeItem('crm_clients')
+    localStorage.removeItem('crm_templates')
+    localStorage.removeItem('crm_session')
+    LS.set('crm_version', DATA_VERSION)
+  }
   if (!LS.get('crm_leads', null)) LS.set('crm_leads', MOCK_LEADS)
   if (!LS.get('crm_users', null)) LS.set('crm_users', MOCK_USERS)
   if (!LS.get('crm_activities', null)) LS.set('crm_activities', MOCK_ACTIVITIES)
