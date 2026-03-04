@@ -1,0 +1,295 @@
+{
+  "name": "Google Maps → Revolution CRM",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "trigger-manual",
+      "name": "🚀 Lancer le scraping",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 400]
+    },
+    {
+      "parameters": {
+        "formTitle": "Google Maps Scraper",
+        "formDescription": "Lance le scraping de leads depuis Google Maps",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Recherche (ex: agence ecommerce, coach business...)",
+              "fieldType": "text",
+              "requiredField": true,
+              "fieldId": "search_query"
+            },
+            {
+              "fieldLabel": "Ville / Région (ex: Paris, Lyon, France...)",
+              "fieldType": "text",
+              "requiredField": true,
+              "fieldId": "location"
+            },
+            {
+              "fieldLabel": "Nombre max de leads",
+              "fieldType": "number",
+              "requiredField": false,
+              "fieldId": "max_results"
+            }
+          ]
+        },
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "form-trigger",
+      "name": "📋 Formulaire de lancement",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [240, 220],
+      "webhookId": "google-maps-form"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.apify.com/v2/acts/compass~crawler-google-places/runs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": []
+        },
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"searchStringsArray\": [\"{{ $json.search_query || $json.data?.search_query }} {{ $json.location || $json.data?.location }}\"],\n  \"maxCrawledPlacesPerSearch\": {{ $json.max_results || $json.data?.max_results || 50 }},\n  \"language\": \"fr\",\n  \"countryCode\": \"fr\",\n  \"includeWebResults\": false,\n  \"scrapeReviews\": false,\n  \"scrapeDirectories\": false\n}",
+        "options": {}
+      },
+      "id": "apify-run",
+      "name": "🗺️ Lancer le scraper Apify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 320],
+      "notes": "API Key Apify : Settings → Integrations → API tokens\nActeur : compass/crawler-google-places (gratuit jusqu'à 5k résultats/mois)"
+    },
+    {
+      "parameters": {
+        "amount": 30,
+        "unit": "seconds"
+      },
+      "id": "wait-apify",
+      "name": "⏳ Attendre le scraping (30s)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [720, 320],
+      "webhookId": "wait-apify"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.apify.com/v2/acts/compass~crawler-google-places/runs/{{ $('🗺️ Lancer le scraper Apify').item.json.data.id }}/dataset/items",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "format", "value": "json" },
+            { "name": "limit", "value": "200" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "apify-results",
+      "name": "📥 Récupérer les résultats",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [940, 320]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filtrer et mapper les résultats Apify → format CRM\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const place = item.json;\n  \n  // Skip si pas de nom\n  if (!place.title && !place.name) continue;\n  \n  // Skip chaînes trop connues (optionnel)\n  const skip = ['McDonald', 'Starbucks', 'Carrefour', 'Leclerc', 'Lidl'];\n  const name = place.title || place.name || '';\n  if (skip.some(s => name.includes(s))) continue;\n\n  results.push({\n    json: {\n      name: name,\n      company: name,\n      sector: place.categoryName || place.category || '',\n      email: place.email || null,\n      phone: place.phone || place.phoneUnformatted || null,\n      website: place.website || null,\n      address: place.address || place.street || '',\n      city: place.city || '',\n      rating: place.totalScore || place.rating || null,\n      reviewCount: place.reviewsCount || 0,\n      googleMapsUrl: place.url || place.googleMapsUrl || null,\n      source: 'Google Maps',\n      heatScore: 'Cold',\n      stage: 'Prospect',\n      estimatedValue: 0,\n      // Métadonnées utiles pour les notes\n      _meta: {\n        address: place.address,\n        rating: place.totalScore,\n        reviews: place.reviewsCount,\n        category: place.categoryName,\n      }\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "map-fields",
+      "name": "🔄 Mapper les champs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1160, 320]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "split-batches",
+      "name": "📦 Traiter 1 par 1",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [1380, 320]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.email }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "filter-email",
+      "name": "📧 A un email ?",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [1600, 220],
+      "notes": "Optionnel — supprimez ce filtre si vous voulez tous les leads même sans email"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://revolution-crm.vercel.app/api/leads",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "X-API-Key", "value": "REMPLACER_PAR_TA_CLE_API" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"name\": \"{{ $json.name }}\",\n  \"company\": \"{{ $json.company }}\",\n  \"sector\": \"{{ $json.sector }}\",\n  \"email\": \"{{ $json.email }}\",\n  \"phone\": \"{{ $json.phone }}\",\n  \"website\": \"{{ $json.website }}\",\n  \"source\": \"Google Maps\",\n  \"heatScore\": \"Cold\",\n  \"stage\": \"Prospect\"\n}",
+        "options": {
+          "response": { "response": { "neverError": true } }
+        }
+      },
+      "id": "push-crm",
+      "name": "📤 Push → CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1820, 220],
+      "notes": "⚠️ Remplace X-API-Key par ta clé depuis Settings → API & Intégrations"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {},
+          "conditions": [
+            {
+              "leftValue": "={{ $json.duplicate }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-duplicate",
+      "name": "🔍 Doublon ?",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [2040, 220]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "status", "value": "=duplicate: {{ $json.message }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "log-duplicate",
+      "name": "⚠️ Log doublon",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [2260, 140]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "status", "value": "=✅ Lead créé: {{ $json.lead.name }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "log-success",
+      "name": "✅ Lead créé",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [2260, 300]
+    },
+    {
+      "parameters": {
+        "content": "## 🗺️ Google Maps → Revolution CRM\n\n**Workflow de prospection automatique**\n\n### Setup requis :\n1. **Apify** : compte + API key (httpQueryAuth)\n2. **CRM API Key** : Settings → API & Intégrations → copier la clé\n3. **Supabase** : pour persister les données en production\n\n### Comment l'utiliser :\n- Lancer via le formulaire (URL dans le node FormTrigger)\n- Ou remplacer le FormTrigger par un Schedule pour un scraping automatique\n\n### Acteur Apify :\n`compass/crawler-google-places`\n- Gratuit : 5 000 résultats/mois\n- Ou utiliser `maxua/google-maps-email-leads-fast-scraper` pour avoir les emails",
+        "height": 380,
+        "width": 380,
+        "color": 4
+      },
+      "id": "sticky-note",
+      "name": "📝 Guide",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [240, 620]
+    },
+    {
+      "parameters": {
+        "content": "### ⚠️ Filtre email\nCe filtre ne garde que les leads avec un email.\n\n**Supprimer ce nœud** si tu veux tous les leads (même sans email) → utile pour appel cold directement.",
+        "height": 160,
+        "width": 260,
+        "color": 6
+      },
+      "id": "sticky-filter",
+      "name": "Note filtre",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1560, 420]
+    }
+  ],
+  "connections": {
+    "📋 Formulaire de lancement": {
+      "main": [[{ "node": "🗺️ Lancer le scraper Apify", "type": "main", "index": 0 }]]
+    },
+    "🚀 Lancer le scraping": {
+      "main": [[{ "node": "🗺️ Lancer le scraper Apify", "type": "main", "index": 0 }]]
+    },
+    "🗺️ Lancer le scraper Apify": {
+      "main": [[{ "node": "⏳ Attendre le scraping (30s)", "type": "main", "index": 0 }]]
+    },
+    "⏳ Attendre le scraping (30s)": {
+      "main": [[{ "node": "📥 Récupérer les résultats", "type": "main", "index": 0 }]]
+    },
+    "📥 Récupérer les résultats": {
+      "main": [[{ "node": "🔄 Mapper les champs", "type": "main", "index": 0 }]]
+    },
+    "🔄 Mapper les champs": {
+      "main": [[{ "node": "📦 Traiter 1 par 1", "type": "main", "index": 0 }]]
+    },
+    "📦 Traiter 1 par 1": {
+      "main": [[{ "node": "📧 A un email ?", "type": "main", "index": 0 }]]
+    },
+    "📧 A un email ?": {
+      "main": [[{ "node": "📤 Push → CRM", "type": "main", "index": 0 }]]
+    },
+    "📤 Push → CRM": {
+      "main": [[{ "node": "🔍 Doublon ?", "type": "main", "index": 0 }]]
+    },
+    "🔍 Doublon ?": {
+      "main": [
+        [{ "node": "⚠️ Log doublon", "type": "main", "index": 0 }],
+        [{ "node": "✅ Lead créé", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [{ "name": "lead-generation" }, { "name": "google-maps" }],
+  "triggerCount": 2,
+  "updatedAt": "2026-03-04T00:00:00.000Z",
+  "versionId": "1"
+}
