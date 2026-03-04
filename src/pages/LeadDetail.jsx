@@ -7,6 +7,15 @@ import { formatDistanceToNow, format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 
 const STAGES = ['Prospect', 'Contacté', 'RDV Pris', 'Proposition Envoyée', 'Gagné', 'Perdu']
+
+const STAGE_META = {
+  'Prospect':             { icon: '🎯', color: 'bg-white/10 border-white/20 text-white/60',          action: 'À contacter', next: 'Envoyer un premier message' },
+  'Contacté':             { icon: '📞', color: 'bg-blue-500/15 border-blue-500/30 text-blue-400',     action: 'Premier contact fait', next: 'Proposer un RDV discovery' },
+  'RDV Pris':             { icon: '📅', color: 'bg-violet-500/15 border-violet-500/30 text-violet-400', action: 'Discovery call planifié', next: 'Préparer et envoyer la proposition' },
+  'Proposition Envoyée':  { icon: '📄', color: 'bg-yellow-500/15 border-yellow-500/30 text-yellow-400', action: 'Proposition envoyée', next: 'Relancer et closer' },
+  'Gagné':                { icon: '✅', color: 'bg-green-500/15 border-green-500/30 text-green-400',  action: 'Deal signé !', next: 'Démarrer l\'onboarding' },
+  'Perdu':                { icon: '❌', color: 'bg-red-500/15 border-red-500/30 text-red-400',        action: 'Lead perdu', next: 'Analyser la raison' },
+}
 const LOSS_REASONS = ['Prix', 'Timing', 'Concurrent', 'Pas intéressé', 'Autre']
 const ACTIVITY_TYPES = [
   { value: 'call', label: '📞 Appel', icon: <Phone size={13} />, color: 'text-green-400 bg-green-500/15' },
@@ -91,6 +100,43 @@ export default function LeadDetail() {
           }
         </div>
       </div>
+
+      {/* Workflow progress bar */}
+      {!editing && (
+        <div className="glass p-3 mb-5 overflow-x-auto">
+          <div className="flex items-center min-w-max gap-1">
+            {STAGES.filter(s => s !== 'Perdu').map((s, i) => {
+              const meta = STAGE_META[s]
+              const isActive = lead.stage === s
+              const isDone = STAGES.indexOf(lead.stage) > i && lead.stage !== 'Perdu'
+              return (
+                <div key={s} className="flex items-center gap-1">
+                  <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium transition-all whitespace-nowrap
+                    ${isActive ? meta.color : isDone ? 'bg-white/5 border-white/10 text-white/40' : 'bg-transparent border-transparent text-white/20'}`}>
+                    <span>{meta.icon}</span>
+                    <div>
+                      <div className={isActive ? 'font-bold' : ''}>{s}</div>
+                      {isActive && <div className="text-xs opacity-70 font-normal">{meta.next}</div>}
+                    </div>
+                    {isDone && <span className="text-green-400/60 text-xs">✓</span>}
+                  </div>
+                  {i < STAGES.filter(s => s !== 'Perdu').length - 1 && (
+                    <div className={`w-4 h-px ${isDone || isActive ? 'bg-white/20' : 'bg-white/8'}`} />
+                  )}
+                </div>
+              )
+            })}
+            {lead.stage === 'Perdu' && (
+              <div className="flex items-center gap-1 ml-2">
+                <div className="w-4 h-px bg-red-500/30" />
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl border bg-red-500/15 border-red-500/30 text-red-400 text-xs font-bold whitespace-nowrap">
+                  ❌ Perdu {lead.lossReason && `— ${lead.lossReason}`}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Info */}

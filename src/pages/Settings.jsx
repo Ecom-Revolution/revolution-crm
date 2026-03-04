@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { auth } from '../lib/api'
 import { GlassCard, Button, Input } from '../components/ui'
-import { Key, Copy, Check, RefreshCw, Webhook, Database, User, Bell } from 'lucide-react'
+import { Key, Copy, Check, RefreshCw, Webhook, Database, User, Bell, Lock, Eye, EyeOff } from 'lucide-react'
 
 const generateKey = () => 'revo_' + Array.from({ length: 32 }, () => Math.random().toString(36)[2]).join('')
 
@@ -13,6 +13,24 @@ export default function Settings() {
   const [profileForm, setProfileForm] = useState({ name: currentUser?.name || '', email: currentUser?.email || '' })
   const [notifForm, setNotifForm] = useState({ newLead: true, stageChange: true, weeklyReport: false })
   const [saved, setSaved] = useState(false)
+  const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' })
+  const [pwError, setPwError] = useState('')
+  const [pwSuccess, setPwSuccess] = useState(false)
+  const [showPw, setShowPw] = useState({ current: false, next: false, confirm: false })
+
+  const handleChangePassword = (e) => {
+    e.preventDefault()
+    setPwError('')
+    // Vérifier mot de passe actuel
+    const stored = localStorage.getItem('crm_password') || 'demo1234'
+    if (pwForm.current !== stored) { setPwError('Mot de passe actuel incorrect.'); return }
+    if (pwForm.next.length < 6) { setPwError('Le nouveau mot de passe doit faire au moins 6 caractères.'); return }
+    if (pwForm.next !== pwForm.confirm) { setPwError('Les mots de passe ne correspondent pas.'); return }
+    localStorage.setItem('crm_password', pwForm.next)
+    setPwSuccess(true)
+    setPwForm({ current: '', next: '', confirm: '' })
+    setTimeout(() => setPwSuccess(false), 3000)
+  }
 
   const handleCopyKey = () => {
     navigator.clipboard.writeText(apiKey)
@@ -84,6 +102,52 @@ export default function Settings() {
             </div>
             <div className="flex justify-end">
               <Button type="submit" size="sm">{saved ? '✓ Sauvegardé' : 'Sauvegarder'}</Button>
+            </div>
+          </form>
+        </GlassCard>
+
+        {/* Sécurité — Changement de mot de passe */}
+        <GlassCard>
+          <div className="flex items-center gap-2 mb-4">
+            <Lock size={15} className="text-pink-400" />
+            <div className="font-bold text-sm">Mot de passe</div>
+          </div>
+          {pwSuccess && (
+            <div className="mb-3 p-3 rounded-xl bg-green-500/10 border border-green-500/20 text-green-400 text-sm">
+              ✓ Mot de passe mis à jour avec succès.
+            </div>
+          )}
+          {pwError && (
+            <div className="mb-3 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+              {pwError}
+            </div>
+          )}
+          <form onSubmit={handleChangePassword} className="flex flex-col gap-3">
+            {[
+              { key: 'current', label: 'Mot de passe actuel' },
+              { key: 'next', label: 'Nouveau mot de passe' },
+              { key: 'confirm', label: 'Confirmer le nouveau mot de passe' },
+            ].map(({ key, label }) => (
+              <div key={key}>
+                <label className="text-xs text-white/50 mb-1 block">{label}</label>
+                <div className="relative">
+                  <input
+                    type={showPw[key] ? 'text' : 'password'}
+                    value={pwForm[key]}
+                    onChange={e => setPwForm(p => ({ ...p, [key]: e.target.value }))}
+                    placeholder="••••••••"
+                    required
+                    className="input-base px-3 py-2.5 text-sm w-full pr-10"
+                  />
+                  <button type="button" onClick={() => setShowPw(p => ({ ...p, [key]: !p[key] }))}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60 transition-colors">
+                    {showPw[key] ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+              </div>
+            ))}
+            <div className="flex justify-end">
+              <Button type="submit" size="sm">Changer le mot de passe</Button>
             </div>
           </form>
         </GlassCard>

@@ -2,11 +2,68 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { leads, users } from '../lib/api'
 import { HeatBadge, StageBadge, Avatar, Button, Input, Select, EmptyState } from '../components/ui'
-import { Search, Filter, ChevronUp, ChevronDown, Download, Plus, Trash2 } from 'lucide-react'
+import { Search, Filter, ChevronUp, ChevronDown, Download, Plus, Trash2, ChevronRight } from 'lucide-react'
 import { formatDistanceToNow, differenceInDays } from 'date-fns'
 import { fr } from 'date-fns/locale'
 
 const STAGES = ['Prospect', 'Contacté', 'RDV Pris', 'Proposition Envoyée', 'Gagné', 'Perdu']
+
+const WORKFLOW_STEPS = [
+  {
+    stage: 'Prospect',
+    icon: '🎯',
+    color: 'text-white/60',
+    bg: 'bg-white/6 border-white/10',
+    activeBg: 'bg-white/10 border-white/20',
+    action: 'Scraper / Inbound',
+    desc: 'Lead identifié, pas encore contacté',
+  },
+  {
+    stage: 'Contacté',
+    icon: '📞',
+    color: 'text-blue-400',
+    bg: 'bg-blue-500/6 border-blue-500/15',
+    activeBg: 'bg-blue-500/15 border-blue-500/30',
+    action: 'Premier contact',
+    desc: 'Email cold ou appel de prise de contact',
+  },
+  {
+    stage: 'RDV Pris',
+    icon: '📅',
+    color: 'text-violet-400',
+    bg: 'bg-violet-500/6 border-violet-500/15',
+    activeBg: 'bg-violet-500/15 border-violet-500/30',
+    action: 'Discovery call',
+    desc: 'RDV planifié — qualifier les besoins',
+  },
+  {
+    stage: 'Proposition Envoyée',
+    icon: '📄',
+    color: 'text-yellow-400',
+    bg: 'bg-yellow-500/6 border-yellow-500/15',
+    activeBg: 'bg-yellow-500/15 border-yellow-500/30',
+    action: 'Proposition commerciale',
+    desc: 'Devis / offre envoyée, en attente de retour',
+  },
+  {
+    stage: 'Gagné',
+    icon: '✅',
+    color: 'text-green-400',
+    bg: 'bg-green-500/6 border-green-500/15',
+    activeBg: 'bg-green-500/15 border-green-500/30',
+    action: 'Deal signé',
+    desc: 'Paiement reçu — onboarding client',
+  },
+  {
+    stage: 'Perdu',
+    icon: '❌',
+    color: 'text-red-400',
+    bg: 'bg-red-500/6 border-red-500/15',
+    activeBg: 'bg-red-500/15 border-red-500/30',
+    action: 'Lead perdu',
+    desc: 'Raison identifiée — archivé',
+  },
+]
 const SOURCES = ['Tous', 'Google Maps', 'Inbound', 'Referral', 'Cold Email', 'Instagram', 'Autre']
 const HEAT = ['Tous', 'Hot', 'Warm', 'Cold']
 
@@ -125,6 +182,32 @@ export default function Pipeline() {
           <Button variant="ghost" size="sm" onClick={() => setShowFilters(f => !f)}><Filter size={14} /> Filtres</Button>
           <Button size="sm" onClick={() => navigate('/leads/new')}><Plus size={14} /> Lead</Button>
         </div>
+      </div>
+
+      {/* Workflow visuel — étapes du pipeline */}
+      <div className="grid grid-cols-6 gap-2 mb-4">
+        {WORKFLOW_STEPS.map((step, i) => {
+          const count = allLeads.filter(l => l.stage === step.stage).length
+          const value = allLeads.filter(l => l.stage === step.stage).reduce((s, l) => s + (l.estimatedValue || 0), 0)
+          const isActive = filterStage === step.stage
+          return (
+            <button key={step.stage} onClick={() => { setFilterStage(isActive ? 'Tous' : step.stage); setPage(1) }}
+              className={`relative flex flex-col gap-1.5 p-3 rounded-2xl border text-left transition-all ${isActive ? step.activeBg : step.bg} hover:brightness-110`}>
+              <div className="flex items-center justify-between">
+                <span className="text-base leading-none">{step.icon}</span>
+                <span className={`text-xl font-black ${step.color}`}>{count}</span>
+              </div>
+              <div className={`text-xs font-semibold ${step.color}`}>{step.action}</div>
+              <div className="text-xs text-white/30 leading-tight">{step.desc}</div>
+              {value > 0 && (
+                <div className="text-xs font-semibold text-white/50 mt-0.5">
+                  €{value >= 1000 ? `${(value / 1000).toFixed(0)}k` : value}
+                </div>
+              )}
+              {isActive && <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-white/40" />}
+            </button>
+          )
+        })}
       </div>
 
       {/* Search + Filters */}

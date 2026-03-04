@@ -49,7 +49,8 @@ export const auth = {
     const users = LS.get('crm_users', MOCK_USERS)
     const user = users.find(u => u.email === email)
     if (!user) return { error: 'Email introuvable' }
-    if (password !== 'demo1234') return { error: 'Mot de passe incorrect' }
+    const storedPw = localStorage.getItem('crm_password') || 'demo1234'
+    if (password !== storedPw) return { error: 'Mot de passe incorrect' }
     LS.set('crm_session', user)
     return { user }
   },
