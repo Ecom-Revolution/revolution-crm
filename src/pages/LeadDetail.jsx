@@ -298,6 +298,87 @@ export default function LeadDetail() {
             </div>
           </GlassCard>
 
+          {lead.aiScore !== null && lead.aiScore !== undefined && (
+            <GlassCard className="border border-violet-500/20 bg-violet-500/5">
+              <div className="font-bold text-sm mb-3 text-violet-400 flex items-center gap-2">
+                <TrendingUp size={14} /> Intelligence Lead
+              </div>
+              {/* Score bar */}
+              <div className="mb-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-white/40">Score de priorité</span>
+                  <span className={`text-lg font-black ${lead.aiScore >= 8 ? 'text-red-400' : lead.aiScore >= 5 ? 'text-yellow-400' : 'text-blue-400'}`}>
+                    {lead.aiScore}<span className="text-white/30 text-sm font-normal">/10</span>
+                  </span>
+                </div>
+                <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${lead.aiScore >= 8 ? 'bg-red-400' : lead.aiScore >= 5 ? 'bg-yellow-400' : 'bg-blue-400'}`}
+                    style={{ width: `${lead.aiScore * 10}%` }}
+                  />
+                </div>
+                <div className={`text-xs mt-1 font-semibold ${lead.aiScore >= 8 ? 'text-red-400' : lead.aiScore >= 5 ? 'text-yellow-400' : 'text-blue-400'}`}>
+                  {lead.aiScore >= 8 ? '🔴 Prospect chaud — à contacter en priorité' : lead.aiScore >= 5 ? '🟡 Prospect tiède — bon potentiel' : '🔵 Prospect froid — moins urgent'}
+                </div>
+              </div>
+              {/* Besoins détectés */}
+              {lead.aiNeeds && lead.aiNeeds.length > 0 && (
+                <div className="mb-3">
+                  <div className="text-xs text-white/40 mb-2">Besoins détectés</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {lead.aiNeeds.map((need, i) => (
+                      <span key={i} className="px-2 py-0.5 rounded-full text-xs bg-violet-500/20 border border-violet-500/30 text-violet-300 font-medium">
+                        {need}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {/* Hook SMS */}
+              {lead.aiHook && (
+                <div>
+                  <div className="text-xs text-white/40 mb-1.5">Accroche suggérée</div>
+                  <div className="text-xs text-white/70 bg-white/5 rounded-xl p-3 leading-relaxed italic border border-white/8">
+                    "{lead.aiHook}"
+                  </div>
+                  {lead.phone && (
+                    <a
+                      href={`sms:${lead.phone}?body=${encodeURIComponent(lead.aiHook)}`}
+                      className="mt-2 flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-violet-500/20 hover:bg-violet-500/30 border border-violet-500/30 transition-colors text-xs text-violet-300 font-semibold w-full"
+                    >
+                      Envoyer ce SMS
+                    </a>
+                  )}
+                </div>
+              )}
+            </GlassCard>
+          )}
+
+          {lead.mockupUrl && (
+            <GlassCard className="border border-cyan-500/20 bg-cyan-500/5">
+              <div className="font-bold text-sm mb-3 text-cyan-400 flex items-center gap-2">
+                <ExternalLink size={14} /> Maquette prête
+              </div>
+              <a
+                href={lead.mockupUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 px-3 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 transition-colors text-sm text-cyan-300 hover:text-cyan-200 mb-2 truncate"
+              >
+                <ExternalLink size={13} />
+                <span className="truncate">{lead.mockupUrl.replace('https://', '')}</span>
+              </a>
+              {lead.phone && (
+                <a
+                  href={`sms:${lead.phone}?body=Bonjour, j'ai créé votre site vitrine en avant-première : ${lead.mockupUrl} — Appelez-moi pour en discuter !`}
+                  className="flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 transition-colors text-sm text-white font-semibold w-full"
+                >
+                  Envoyer par SMS
+                </a>
+              )}
+            </GlassCard>
+          )}
+
           <GlassCard>
             <div className="font-bold text-sm mb-3">Actions rapides</div>
             <div className="flex flex-col gap-2">
@@ -313,8 +394,14 @@ export default function LeadDetail() {
               )}
               {lead.website && (
                 <a href={lead.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 transition-colors text-sm text-white/70 hover:text-white">
-                  <ExternalLink size={14} className="text-violet-400" /> Voir le site
+                  <ExternalLink size={14} className="text-violet-400" /> Voir le site actuel
                 </a>
+              )}
+              {!lead.mockupUrl && editing && (
+                <div>
+                  <div className="text-xs text-white/40 mb-1">URL Maquette</div>
+                  <Input value={form.mockupUrl || ''} onChange={e => f('mockupUrl', e.target.value)} placeholder="https://..." />
+                </div>
               )}
             </div>
           </GlassCard>

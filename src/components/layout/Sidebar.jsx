@@ -1,13 +1,15 @@
 import { NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, GitBranch, Users, UserCheck, FileText, BarChart3, Settings, LogOut, Target } from 'lucide-react'
+import { LayoutDashboard, GitBranch, Users, UserCheck, FileText, BarChart3, Settings, LogOut, Target, CalendarDays, Receipt } from 'lucide-react'
 import { auth } from '../../lib/api'
 
 const nav = [
   { to: '/dashboard', icon: <LayoutDashboard size={18} />, label: 'Dashboard' },
   { to: '/pipeline', icon: <GitBranch size={18} />, label: 'Pipeline' },
   { to: '/leads', icon: <Target size={18} />, label: 'Leads' },
+  { to: '/agenda', icon: <CalendarDays size={18} />, label: 'Agenda RDV' },
   { to: '/closers', icon: <Users size={18} />, label: 'Closers', adminOnly: true },
   { to: '/clients', icon: <UserCheck size={18} />, label: 'Clients Actifs' },
+  { to: '/factures', icon: <Receipt size={18} />, label: 'Factures' },
   { to: '/templates', icon: <FileText size={18} />, label: 'Templates' },
   { to: '/reporting', icon: <BarChart3 size={18} />, label: 'Reporting', adminOnly: true },
   { to: '/settings', icon: <Settings size={18} />, label: 'Settings', adminOnly: true },

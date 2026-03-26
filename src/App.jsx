@@ -10,6 +10,8 @@ import Clients from './pages/Clients'
 import Templates from './pages/Templates'
 import Reporting from './pages/Reporting'
 import Settings from './pages/Settings'
+import Agenda from './pages/Agenda'
+import Factures from './pages/Factures'
 
 export default function App() {
   return (
@@ -24,6 +26,8 @@ export default function App() {
           <Route path="/leads/:id" element={<LeadDetail />} />
           <Route path="/closers" element={<Closers />} />
           <Route path="/clients" element={<Clients />} />
+          <Route path="/agenda" element={<Agenda />} />
+          <Route path="/factures" element={<Factures />} />
           <Route path="/templates" element={<Templates />} />
           <Route path="/reporting" element={<Reporting />} />
           <Route path="/settings" element={<Settings />} />
