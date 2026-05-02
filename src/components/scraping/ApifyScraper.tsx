@@ -8,6 +8,7 @@ import { Slider } from "@/components/ui/slider";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Search, Instagram, Music2, Linkedin } from "lucide-react";
+import { functionErrorMessage } from "@/lib/functionErrors";
 
 type Platform = "instagram" | "tiktok" | "linkedin";
 
@@ -47,7 +48,7 @@ export function ApifyScraper({ platform, onJobCreated }: { platform: Platform; o
     if (error || !job) { toast.error(error?.message); setLoading(false); return; }
     const { error: fnErr } = await supabase.functions.invoke("scrape-apify", { body: { job_id: job.id, platform, input } });
     setLoading(false);
-    if (fnErr) { toast.error(fnErr.message); return; }
+    if (fnErr) { toast.error(await functionErrorMessage(fnErr)); return; }
     onJobCreated(job);
   };
 
@@ -57,6 +58,9 @@ export function ApifyScraper({ platform, onJobCreated }: { platform: Platform; o
         <Icon className={`h-5 w-5 ${meta.color}`} />
         <h3 className="font-semibold">{meta.label}</h3>
       </div>
+      <p className="mb-4 text-xs text-muted-foreground">
+        Mode gratuit actif : recherche publique DuckDuckGo si aucun token Apify n'est configuré.
+      </p>
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-1.5 md:col-span-2">
           <Label>{meta.helper} *</Label>

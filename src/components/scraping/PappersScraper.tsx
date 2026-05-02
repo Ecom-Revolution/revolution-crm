@@ -8,6 +8,7 @@ import { Slider } from "@/components/ui/slider";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Building2, Search } from "lucide-react";
+import { functionErrorMessage } from "@/lib/functionErrors";
 
 export function PappersScraper({ onJobCreated }: { onJobCreated: (job: any) => void }) {
   const [activite, setActivite] = useState("");
@@ -45,7 +46,7 @@ export function PappersScraper({ onJobCreated }: { onJobCreated: (job: any) => v
     if (error || !job) { toast.error(error?.message); setLoading(false); return; }
     const { error: fnErr } = await supabase.functions.invoke("scrape-pappers", { body: { job_id: job.id, filters } });
     setLoading(false);
-    if (fnErr) { toast.error(fnErr.message); return; }
+    if (fnErr) { toast.error(await functionErrorMessage(fnErr)); return; }
     onJobCreated(job);
   };
 
@@ -55,6 +56,9 @@ export function PappersScraper({ onJobCreated }: { onJobCreated: (job: any) => v
         <Building2 className="h-5 w-5 text-blue-400" />
         <h3 className="font-semibold">Pappers — Sociétés FR</h3>
       </div>
+      <p className="mb-4 text-xs text-muted-foreground">
+        Mode gratuit actif : API publique Annuaire Entreprises/data.gouv si aucune clé Pappers n'est configurée.
+      </p>
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-1.5 md:col-span-2">
           <Label>Activité (NAF / mot-clé)</Label>

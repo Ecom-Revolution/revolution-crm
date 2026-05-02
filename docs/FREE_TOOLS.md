@@ -6,7 +6,11 @@ Objectif : garder le CRM exploitable sans abonnement obligatoire au départ.
 
 Gratuit et actif :
 
-- Google PageSpeed Insights sans clé pour usage modéré.
+- Recherche locale OpenStreetMap/Nominatim sans clé.
+- Annuaire Entreprises/data.gouv sans clé pour sociétés FR.
+- Crawl email public sans clé pour domaines/entreprises.
+- Recherche sociale publique DuckDuckGo sans clé.
+- Google PageSpeed Insights uniquement si un quota/clé est disponible.
 - Crawl HTML direct du site.
 - Vérification `robots.txt`.
 - Vérification `sitemap.xml`.
@@ -36,7 +40,7 @@ Gratuit ou freemium :
 
 - Import CSV.
 - DuckDuckGo HTML search pour recherche web simple.
-- PageSpeed Insights.
+- PageSpeed Insights en option.
 - Pappers/Hunter/Apify en option selon quotas ou clés disponibles.
 
 ## IA

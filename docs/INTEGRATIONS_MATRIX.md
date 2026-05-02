@@ -14,7 +14,11 @@
 | Outil | Cout | Recommande | Usage |
 | --- | --- | --- | --- |
 | DuckDuckGo | Free | Oui | Recherche web simple |
-| Google PageSpeed | Free | Oui | Audit SEO / perf / UX |
+| OpenStreetMap / Nominatim | Free | Oui | Scraping local sans clé |
+| Annuaire Entreprises data.gouv | Free | Oui | Sociétés FR sans clé |
+| Crawl email public | Free | Oui | Emails publics depuis sites |
+| DuckDuckGo HTML | Free | Oui | Recherche web/social publique |
+| Google PageSpeed | Free/quota | Optionnel | Audit perf si quota disponible |
 | Hunter | Freemium | Oui | Enrichissement email |
 | Apify | Paid | Optionnel | Scraping avance |
 | Pappers | Freemium | Oui | SIREN / verification entreprise |

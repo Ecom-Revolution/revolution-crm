@@ -8,6 +8,7 @@ import { Slider } from "@/components/ui/slider";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Search, MapPin } from "lucide-react";
+import { functionErrorMessage } from "@/lib/functionErrors";
 
 export function GoogleMapsScraper({ onJobCreated }: { onJobCreated: (job: any) => void }) {
   const [query, setQuery] = useState("");
@@ -54,7 +55,7 @@ export function GoogleMapsScraper({ onJobCreated }: { onJobCreated: (job: any) =
     });
     setLoading(false);
     if (fnErr) {
-      toast.error(`Scraper: ${fnErr.message}`);
+      toast.error(`Scraper: ${await functionErrorMessage(fnErr)}`);
       return;
     }
     onJobCreated(job);
@@ -66,6 +67,9 @@ export function GoogleMapsScraper({ onJobCreated }: { onJobCreated: (job: any) =
         <MapPin className="h-5 w-5 text-red-400" />
         <h3 className="font-semibold">Google Maps</h3>
       </div>
+      <p className="mb-4 text-xs text-muted-foreground">
+        Mode gratuit actif : recherche locale OpenStreetMap si aucune clé SerpAPI n'est configurée.
+      </p>
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-1.5">
           <Label>Mot-clé / activité *</Label>

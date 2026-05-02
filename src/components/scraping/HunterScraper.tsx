@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Mail, Search } from "lucide-react";
+import { functionErrorMessage } from "@/lib/functionErrors";
 
 export function HunterScraper({ onJobCreated }: { onJobCreated: (job: any) => void }) {
   const [domain, setDomain] = useState("");
@@ -29,7 +30,7 @@ export function HunterScraper({ onJobCreated }: { onJobCreated: (job: any) => vo
     if (error || !job) { toast.error(error?.message); setLoading(false); return; }
     const { error: fnErr } = await supabase.functions.invoke("scrape-hunter", { body: { job_id: job.id, filters } });
     setLoading(false);
-    if (fnErr) { toast.error(fnErr.message); return; }
+    if (fnErr) { toast.error(await functionErrorMessage(fnErr)); return; }
     onJobCreated(job);
   };
 
@@ -39,6 +40,9 @@ export function HunterScraper({ onJobCreated }: { onJobCreated: (job: any) => vo
         <Mail className="h-5 w-5 text-orange-400" />
         <h3 className="font-semibold">Hunter — Emails pro</h3>
       </div>
+      <p className="mb-4 text-xs text-muted-foreground">
+        Mode gratuit actif : crawl du site et extraction d'emails publics si aucune clé Hunter n'est configurée.
+      </p>
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-1.5">
           <Label>Domaine</Label>

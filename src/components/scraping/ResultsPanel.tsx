@@ -6,6 +6,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Download, ExternalLink, Star, Phone, Mail, Globe, Trash2 } from "lucide-react";
+import { functionErrorMessage } from "@/lib/functionErrors";
 
 export function ResultsPanel({ jobId }: { jobId: string }) {
   const [results, setResults] = useState<any[]>([]);
@@ -56,7 +57,7 @@ export function ResultsPanel({ jobId }: { jobId: string }) {
       body: { result_ids: Array.from(selected) },
     });
     setImporting(false);
-    if (error) { toast.error(error.message); return; }
+    if (error) { toast.error(await functionErrorMessage(error)); return; }
     toast.success(`✓ ${data.imported} importés · ${data.skipped} doublons`);
     setSelected(new Set());
     fetch();
