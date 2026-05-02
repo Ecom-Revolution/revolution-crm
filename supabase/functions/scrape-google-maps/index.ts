@@ -71,8 +71,10 @@ Deno.serve(async (req) => {
           type: "search",
           q: filters.query,
           location: filters.location,
+          z: "14",
           api_key: SERPAPI_KEY,
           hl: "fr",
+          gl: "fr",
         });
         if (nextStart) params.set("start", String(nextStart));
 
