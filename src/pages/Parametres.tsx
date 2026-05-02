@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,30 +7,78 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
-import { Settings as SettingsIcon, Save, Users, Key, Loader2, Shield, Check, X } from "lucide-react";
+import { Settings as SettingsIcon, Save, Users, Key, Loader2, Shield, Check, X, TestTube2, Sparkles, PlugZap } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
+import { AI_PROVIDER_CATALOG, FREE_SMMA_TOOLS, INTEGRATION_CHOICES } from "@/lib/integrations";
 
 interface Member { user_id: string; full_name: string | null; email?: string; role: string; }
+interface IntegrationRow {
+  provider: string;
+  label: string;
+  kind: string;
+  enabled: boolean;
+  api_key: string | null;
+  base_url: string | null;
+  model: string | null;
+  notes: string | null;
+  priority: number;
+  last_test_status: string | null;
+  last_test_message: string | null;
+  last_test_at: string | null;
+}
+interface IntegrationDraft {
+  provider: string;
+  label: string;
+  kind: string;
+  enabled: boolean;
+  api_key: string;
+  base_url: string;
+  model: string;
+  notes: string;
+  priority: number;
+}
+
+const draftFromCatalog = (item: typeof AI_PROVIDER_CATALOG[number]): IntegrationDraft => ({
+  provider: item.provider,
+  label: item.label,
+  kind: item.kind,
+  enabled: item.recommended,
+  api_key: "",
+  base_url: item.baseUrlHint ?? "",
+  model: item.defaultModel ?? "",
+  notes: item.value,
+  priority: item.recommended ? 10 : 50,
+});
 
 export default function Parametres() {
   const { user } = useAuth();
   const [profile, setProfile] = useState<{ full_name: string; phone: string }>({ full_name: "", phone: "" });
   const [members, setMembers] = useState<Member[]>([]);
-  const [secrets, setSecrets] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [integrationRows, setIntegrationRows] = useState<IntegrationRow[]>([]);
+  const [drafts, setDrafts] = useState<Record<string, IntegrationDraft>>({});
+  const [savingProvider, setSavingProvider] = useState<string | null>(null);
+  const [testingProvider, setTestingProvider] = useState<string | null>(null);
 
   const load = async () => {
     if (!user) return;
     setLoading(true);
-    const [{ data: p }, { data: roles }, { data: profiles }] = await Promise.all([
+    const [{ data: p }, { data: roles }, { data: profiles }, { data: integrations }] = await Promise.all([
       supabase.from("profiles").select("full_name, phone").eq("id", user.id).maybeSingle(),
       supabase.from("user_roles").select("user_id, role"),
       supabase.from("profiles").select("id, full_name"),
+      supabase.from("integration_settings")
+        .select("provider,label,kind,enabled,api_key,base_url,model,notes,priority,last_test_status,last_test_message,last_test_at")
+        .eq("kind", "ai")
+        .order("priority", { ascending: true }),
     ]);
+
     if (p) setProfile({ full_name: p.full_name ?? "", phone: p.phone ?? "" });
     const myRole = roles?.find((r) => r.user_id === user.id)?.role;
     setIsAdmin(myRole === "admin");
@@ -40,16 +88,28 @@ export default function Parametres() {
       role: r.role,
     }));
     setMembers(merged);
-    // probe optional integrations (publicly safe — just checks if env var is wired in an edge function)
-    setSecrets({
-      "Lovable AI (Gemini/GPT-5)": true,
-      "Groq (Llama 3.3) — optionnel": false, // surfaced in UI prompt
-      "Google PageSpeed (audit)": true,
-      "DuckDuckGo (recherche web)": true,
-      "Hunter.io (emails)": false,
-      "Apify (scraping avancé)": false,
-      "Pappers (SIREN)": false,
-    });
+
+    const rows = (integrations ?? []) as IntegrationRow[];
+    setIntegrationRows(rows);
+
+    const nextDrafts: Record<string, IntegrationDraft> = {};
+    for (const item of AI_PROVIDER_CATALOG) {
+      const row = rows.find((r) => r.provider === item.provider);
+      nextDrafts[item.provider] = row
+        ? {
+            provider: row.provider,
+            label: row.label,
+            kind: row.kind,
+            enabled: row.enabled,
+            api_key: row.api_key ?? "",
+            base_url: row.base_url ?? "",
+            model: row.model ?? "",
+            notes: row.notes ?? "",
+            priority: row.priority ?? 50,
+          }
+        : draftFromCatalog(item);
+    }
+    setDrafts(nextDrafts);
     setLoading(false);
   };
 
@@ -61,35 +121,75 @@ export default function Parametres() {
     const { error } = await supabase.from("profiles").update(profile).eq("id", user.id);
     setSaving(false);
     if (error) { toast.error(error.message); return; }
-    toast.success("Profil mis à jour");
+    toast.success("Profil mis a jour");
   };
 
   const updateRole = async (userId: string, role: string) => {
-    if (!isAdmin) { toast.error("Réservé aux admins"); return; }
+    if (!isAdmin) { toast.error("Reserve aux admins"); return; }
     const { error } = await supabase.from("user_roles").update({ role: role as any }).eq("user_id", userId);
     if (error) { toast.error(error.message); return; }
-    toast.success("Rôle mis à jour"); load();
+    toast.success("Role mis a jour");
+    load();
   };
+
+  const saveIntegration = async (provider: string) => {
+    if (!isAdmin) { toast.error("Reserve aux admins"); return; }
+    const draft = drafts[provider];
+    if (!draft) return;
+    setSavingProvider(provider);
+    const payload = {
+      provider: draft.provider,
+      label: draft.label,
+      kind: draft.kind,
+      enabled: draft.enabled,
+      api_key: draft.api_key.trim() || null,
+      base_url: draft.base_url.trim() || null,
+      model: draft.model.trim() || null,
+      notes: draft.notes.trim() || null,
+      priority: draft.priority,
+      updated_by: user?.id ?? null,
+    };
+
+    const { error } = await supabase.from("integration_settings").upsert(payload, { onConflict: "provider" });
+    setSavingProvider(null);
+    if (error) { toast.error(error.message); return; }
+    toast.success(`${draft.label} enregistre`);
+    load();
+  };
+
+  const testIntegration = async (provider: string) => {
+    if (!isAdmin) { toast.error("Reserve aux admins"); return; }
+    setTestingProvider(provider);
+    const { data, error } = await supabase.functions.invoke("integration-test", { body: { provider } });
+    setTestingProvider(null);
+    if (error) { toast.error(error.message); return; }
+    const result = data?.results?.[0];
+    if (result?.ok) toast.success(`${provider} OK`);
+    else toast.error(result?.message ?? "Test echoue");
+    load();
+  };
+
+  const aiRowsByProvider = useMemo(() => Object.fromEntries(integrationRows.map((row) => [row.provider, row])), [integrationRows]);
 
   if (loading) return <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>;
 
   return (
     <div>
-      <PageHeader title="Paramètres" description="Profil, équipe et intégrations" />
+      <PageHeader title="Parametres" description="Profil, equipe et integrations" />
 
       <div className="p-6">
         <Tabs defaultValue="profile" className="space-y-6">
           <TabsList>
             <TabsTrigger value="profile"><SettingsIcon className="mr-2 h-4 w-4" />Profil</TabsTrigger>
-            <TabsTrigger value="team"><Users className="mr-2 h-4 w-4" />Équipe</TabsTrigger>
-            <TabsTrigger value="integrations"><Key className="mr-2 h-4 w-4" />Intégrations</TabsTrigger>
+            <TabsTrigger value="team"><Users className="mr-2 h-4 w-4" />Equipe</TabsTrigger>
+            <TabsTrigger value="integrations"><Key className="mr-2 h-4 w-4" />Integrations</TabsTrigger>
           </TabsList>
 
           <TabsContent value="profile">
             <Card className="max-w-xl p-6 space-y-4">
               <div className="grid gap-2"><Label>Email</Label><Input value={user?.email ?? ""} disabled /></div>
               <div className="grid gap-2"><Label>Nom complet</Label><Input value={profile.full_name} onChange={(e) => setProfile({ ...profile, full_name: e.target.value })} /></div>
-              <div className="grid gap-2"><Label>Téléphone</Label><Input value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} /></div>
+              <div className="grid gap-2"><Label>Telephone</Label><Input value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} /></div>
               <Button variant="hero" onClick={saveProfile} disabled={saving}>
                 {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                 Enregistrer
@@ -101,12 +201,12 @@ export default function Parametres() {
             <Card className="overflow-hidden">
               <div className="border-b border-border bg-muted/40 px-4 py-3 flex items-center gap-2">
                 <Shield className="h-4 w-4 text-primary" />
-                <span className="text-sm font-medium">{isAdmin ? "Vous êtes admin" : "Vue lecture (réservé aux admins pour modifier)"}</span>
+                <span className="text-sm font-medium">{isAdmin ? "Vous etes admin" : "Vue lecture (reserve aux admins pour modifier)"}</span>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-muted/20 text-xs uppercase text-muted-foreground">
-                    <tr><th className="p-3 text-left">Membre</th><th className="p-3 text-left">Rôle</th></tr>
+                    <tr><th className="p-3 text-left">Membre</th><th className="p-3 text-left">Role</th></tr>
                   </thead>
                   <tbody>
                     {members.map((m) => (
@@ -137,19 +237,182 @@ export default function Parametres() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="integrations">
-            <Card className="p-6 space-y-3">
-              <div className="text-sm text-muted-foreground mb-2">Statut des APIs gratuites utilisées par les agents IA :</div>
-              {Object.entries(secrets).map(([name, ok]) => (
-                <div key={name} className="flex items-center justify-between rounded-lg border border-border bg-background/50 p-3">
-                  <span className="text-sm font-medium">{name}</span>
-                  {ok ? <Badge className="bg-success/15 text-success border-success/30 gap-1"><Check className="h-3 w-3" />Connecté</Badge>
-                       : <Badge variant="outline" className="gap-1"><X className="h-3 w-3" />Optionnel</Badge>}
-                </div>
+          <TabsContent value="integrations" className="space-y-6">
+            <div className="grid gap-4 md:grid-cols-3">
+              {INTEGRATION_CHOICES.map((choice) => (
+                <Card key={choice.title} className="p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-wider text-muted-foreground">{choice.title}</p>
+                      <h3 className="mt-1 text-base font-semibold">{choice.label}</h3>
+                    </div>
+                    <Badge variant="outline">{choice.items.length} blocs</Badge>
+                  </div>
+                  <p className="mt-2 text-sm text-muted-foreground">{choice.description}</p>
+                  <ul className="mt-3 space-y-1 text-sm text-muted-foreground">
+                    {choice.items.map((item) => (
+                      <li key={item} className="flex items-center gap-2">
+                        <Check className="h-3.5 w-3.5 text-success" />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </Card>
               ))}
-              <p className="pt-3 text-xs text-muted-foreground">
-                Les intégrations optionnelles (Hunter, Apify, Pappers, Groq) débloquent des fonctionnalités avancées mais ne sont pas indispensables. Les agents IA fonctionnent par défaut avec Lovable AI.
-              </p>
+            </div>
+
+            <Card className="p-6 space-y-4">
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold">Providers IA configurables</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Ajoute tes clefs ici. Le CRM peut ensuite router automatiquement les agents vers Gemini, Claude, OpenAI, Groq ou le gateway Lovable.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <PlugZap className="h-4 w-4 text-primary" />
+                  {Object.keys(aiRowsByProvider).length} providers detectes
+                </div>
+              </div>
+
+              <div className="grid gap-4 xl:grid-cols-2">
+                {AI_PROVIDER_CATALOG.map((item) => {
+                  const draft = drafts[item.provider] ?? draftFromCatalog(item);
+                  const row = aiRowsByProvider[item.provider];
+                  const connected = Boolean(row?.enabled && row?.api_key);
+
+                  return (
+                    <Card key={item.provider} className="p-5 space-y-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="text-base font-semibold">{item.label}</h3>
+                            {item.recommended && <Badge className="bg-success/15 text-success border-success/30">Recommande</Badge>}
+                            <Badge variant="outline">{item.cost}</Badge>
+                          </div>
+                          <p className="mt-1 text-sm text-muted-foreground">{item.description}</p>
+                        </div>
+                        {connected ? (
+                          <Badge className="bg-success/15 text-success border-success/30 gap-1"><Check className="h-3 w-3" />Connecte</Badge>
+                        ) : (
+                          <Badge variant="outline" className="gap-1"><X className="h-3 w-3" />Non connecte</Badge>
+                        )}
+                      </div>
+
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <div className="grid gap-2">
+                          <Label>Activer</Label>
+                          <div className="flex h-10 items-center rounded-md border border-border px-3">
+                            <Switch
+                              checked={draft.enabled}
+                              onCheckedChange={(checked) => setDrafts((prev) => ({
+                                ...prev,
+                                [item.provider]: { ...draft, enabled: checked },
+                              }))}
+                              disabled={!isAdmin}
+                            />
+                          </div>
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>Priorite</Label>
+                          <Input
+                            type="number"
+                            value={draft.priority}
+                            onChange={(e) => setDrafts((prev) => ({
+                              ...prev,
+                              [item.provider]: { ...draft, priority: Number(e.target.value) },
+                            }))}
+                            disabled={!isAdmin}
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>Cle API</Label>
+                          <Input
+                            type="password"
+                            value={draft.api_key}
+                            onChange={(e) => setDrafts((prev) => ({
+                              ...prev,
+                              [item.provider]: { ...draft, api_key: e.target.value },
+                            }))}
+                            placeholder={item.needsApiKey ? "sk-..." : "Optionnel"}
+                            disabled={!isAdmin}
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>Model</Label>
+                          <Input
+                            value={draft.model}
+                            onChange={(e) => setDrafts((prev) => ({
+                              ...prev,
+                              [item.provider]: { ...draft, model: e.target.value },
+                            }))}
+                            placeholder={item.defaultModel ?? "Model"}
+                            disabled={!isAdmin}
+                          />
+                        </div>
+                        <div className="grid gap-2 md:col-span-2">
+                          <Label>Base URL</Label>
+                          <Input
+                            value={draft.base_url}
+                            onChange={(e) => setDrafts((prev) => ({
+                              ...prev,
+                              [item.provider]: { ...draft, base_url: e.target.value },
+                            }))}
+                            placeholder={item.baseUrlHint ?? "URL optionnelle"}
+                            disabled={!isAdmin}
+                          />
+                        </div>
+                        <div className="grid gap-2 md:col-span-2">
+                          <Label>Notes</Label>
+                          <Textarea
+                            value={draft.notes}
+                            onChange={(e) => setDrafts((prev) => ({
+                              ...prev,
+                              [item.provider]: { ...draft, notes: e.target.value },
+                            }))}
+                            rows={3}
+                            disabled={!isAdmin}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button variant="hero" onClick={() => saveIntegration(item.provider)} disabled={!isAdmin || savingProvider === item.provider}>
+                          {savingProvider === item.provider ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                          Sauvegarder
+                        </Button>
+                        <Button variant="outline" onClick={() => testIntegration(item.provider)} disabled={!isAdmin || testingProvider === item.provider || !connected}>
+                          {testingProvider === item.provider ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <TestTube2 className="mr-2 h-4 w-4" />}
+                          Tester
+                        </Button>
+                        <div className="text-xs text-muted-foreground">
+                          {row?.last_test_status === "success" && `Dernier test: ${row.last_test_message ?? "OK"}`}
+                          {row?.last_test_status === "error" && `Dernier test: ${row.last_test_message ?? "Erreur"}`}
+                          {!row?.last_test_status && item.value}
+                        </div>
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
+            </Card>
+
+            <Card className="p-6 space-y-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-primary" />
+                <h2 className="text-lg font-semibold">Integrations gratuites deja integrees</h2>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {FREE_SMMA_TOOLS.map((tool) => (
+                  <div key={tool.name} className="rounded-lg border border-border bg-background/50 p-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-medium">{tool.name}</p>
+                      <Badge variant="outline">{tool.cliSupport === "yes" ? "CLI possible" : tool.cliSupport === "limited" ? "CLI limite" : "API"}</Badge>
+                    </div>
+                    <p className="mt-2 text-sm text-muted-foreground">{tool.use}</p>
+                  </div>
+                ))}
+              </div>
             </Card>
           </TabsContent>
         </Tabs>

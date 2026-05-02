@@ -512,6 +512,63 @@ export type Database = {
         }
         Relationships: []
       }
+      integration_settings: {
+        Row: {
+          api_key: string | null
+          base_url: string | null
+          created_at: string
+          enabled: boolean
+          id: string
+          kind: string
+          label: string
+          last_test_at: string | null
+          last_test_message: string | null
+          last_test_status: string | null
+          model: string | null
+          notes: string | null
+          priority: number
+          provider: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          api_key?: string | null
+          base_url?: string | null
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          kind?: string
+          label: string
+          last_test_at?: string | null
+          last_test_message?: string | null
+          last_test_status?: string | null
+          model?: string | null
+          notes?: string | null
+          priority?: number
+          provider: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          api_key?: string | null
+          base_url?: string | null
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          kind?: string
+          label?: string
+          last_test_at?: string | null
+          last_test_message?: string | null
+          last_test_status?: string | null
+          model?: string | null
+          notes?: string | null
+          priority?: number
+          provider?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       invoices: {
         Row: {
           amount: number
