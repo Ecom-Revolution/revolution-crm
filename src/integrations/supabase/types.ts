@@ -352,6 +352,72 @@ export type Database = {
           },
         ]
       }
+      funnel_events: {
+        Row: {
+          amount: number | null
+          channel: string | null
+          client_id: string | null
+          created_at: string
+          created_by: string | null
+          entity_id: string | null
+          entity_type: string
+          event_type: string
+          id: string
+          metadata: Json
+          prospect_id: string | null
+          source: string | null
+          status_from: string | null
+          status_to: string | null
+        }
+        Insert: {
+          amount?: number | null
+          channel?: string | null
+          client_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          entity_id?: string | null
+          entity_type: string
+          event_type: string
+          id?: string
+          metadata?: Json
+          prospect_id?: string | null
+          source?: string | null
+          status_from?: string | null
+          status_to?: string | null
+        }
+        Update: {
+          amount?: number | null
+          channel?: string | null
+          client_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          entity_id?: string | null
+          entity_type?: string
+          event_type?: string
+          id?: string
+          metadata?: Json
+          prospect_id?: string | null
+          source?: string | null
+          status_from?: string | null
+          status_to?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "funnel_events_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "funnel_events_prospect_id_fkey"
+            columns: ["prospect_id"]
+            isOneToOne: false
+            referencedRelation: "prospects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       campaigns: {
         Row: {
           active: boolean | null

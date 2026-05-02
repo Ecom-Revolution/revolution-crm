@@ -1,9 +1,9 @@
 // Helper unifié pour appeler une IA.
-// Priorité: settings CRM (si configurés) > variables d'environnement > fallback Gateway/Lovable.
+// Priorité: settings CRM (si configurés) > variables d'environnement > fallback provider disponible.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-export type AIProvider = "lovable" | "groq" | "openai" | "claude" | "gemini" | "auto";
+export type AIProvider = "groq" | "openai" | "claude" | "gemini" | "auto";
 
 interface CallAIOpts {
   systemPrompt: string;
@@ -25,25 +25,34 @@ type IntegrationSetting = {
 };
 
 const DEFAULT_MODELS: Record<Exclude<AIProvider, "auto">, string> = {
-  lovable: "google/gemini-2.5-flash",
-  groq: "llama-3.3-70b-versatile",
+  groq: "openai/gpt-oss-20b",
   openai: "gpt-4o-mini",
   claude: "claude-3-5-sonnet-latest",
   gemini: "gemini-2.5-flash",
 };
 
 const DEFAULT_ENDPOINTS: Record<Exclude<AIProvider, "auto">, string> = {
-  lovable: "https://ai.gateway.lovable.dev/v1/chat/completions",
   groq: "https://api.groq.com/openai/v1/chat/completions",
   openai: "https://api.openai.com/v1/chat/completions",
   claude: "https://api.anthropic.com/v1/messages",
   gemini: "https://generativelanguage.googleapis.com/v1beta/models",
 };
 
+function envNameForProvider(provider: Exclude<AIProvider, "auto">) {
+  return provider === "groq" ? "GROQ_API_KEY"
+    : provider === "openai" ? "OPENAI_API_KEY"
+    : provider === "claude" ? "ANTHROPIC_API_KEY"
+    : "GEMINI_API_KEY";
+}
+
+function envKeyForProvider(provider: Exclude<AIProvider, "auto">) {
+  return Deno.env.get(envNameForProvider(provider)) ?? "";
+}
+
 async function loadSettings(): Promise<IntegrationSetting[]> {
   const url = Deno.env.get("SUPABASE_URL");
   const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const publishableKey = Deno.env.get("SUPABASE_PUBLISHABLE_KEY");
+  const publishableKey = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY");
   if (!url || !serviceRole || !publishableKey) return [];
 
   try {
@@ -63,21 +72,42 @@ async function loadSettings(): Promise<IntegrationSetting[]> {
 function normalizeProvider(provider: AIProvider, settings: IntegrationSetting[]) {
   if (provider !== "auto") return provider;
 
-  const preferred = ["claude", "gemini", "openai", "groq", "lovable"] as const;
+  const preferred = ["gemini", "groq", "claude", "openai"] as const;
   for (const candidate of preferred) {
-    const setting = settings.find((s) => s.provider === candidate && s.enabled && s.api_key);
-    if (setting) return candidate;
+    const setting = settings.find((s) => s.provider === candidate && s.enabled);
+    if (setting && (setting.api_key || envKeyForProvider(candidate))) return candidate;
   }
+  if (Deno.env.get("GEMINI_API_KEY")) return "gemini";
   if (Deno.env.get("GROQ_API_KEY")) return "groq";
   if (Deno.env.get("ANTHROPIC_API_KEY")) return "claude";
   if (Deno.env.get("OPENAI_API_KEY")) return "openai";
-  if (Deno.env.get("GEMINI_API_KEY")) return "gemini";
-  if (Deno.env.get("LOVABLE_API_KEY")) return "lovable";
-  return "lovable";
+  return "groq";
 }
 
 function getSetting(provider: Exclude<AIProvider, "auto">, settings: IntegrationSetting[]) {
-  return settings.find((s) => s.provider === provider && s.enabled && s.api_key);
+  return settings.find((s) => s.provider === provider && s.enabled);
+}
+
+function providerCandidates(provider: AIProvider, settings: IntegrationSetting[]) {
+  if (provider !== "auto") return [provider];
+
+  const candidates: Exclude<AIProvider, "auto">[] = [];
+  const add = (candidate: Exclude<AIProvider, "auto">) => {
+    if (!candidates.includes(candidate)) candidates.push(candidate);
+  };
+
+  for (const setting of settings) {
+    if (!setting.enabled) continue;
+    if (!["gemini", "groq", "claude", "openai"].includes(setting.provider)) continue;
+    const candidate = setting.provider as Exclude<AIProvider, "auto">;
+    if (setting.api_key || envKeyForProvider(candidate)) add(candidate);
+  }
+
+  for (const candidate of ["gemini", "groq", "claude", "openai"] as const) {
+    if (envKeyForProvider(candidate)) add(candidate);
+  }
+
+  return candidates;
 }
 
 function jsonInstruction(toolName?: string, tool?: any) {
@@ -111,12 +141,14 @@ async function callOpenAICompatible({
   model,
   systemPrompt,
   userPrompt,
+  jsonMode = false,
 }: {
   endpoint: string;
   apiKey: string;
   model: string;
   systemPrompt: string;
   userPrompt: string;
+  jsonMode?: boolean;
 }) {
   const resp = await fetch(endpoint, {
     method: "POST",
@@ -131,6 +163,7 @@ async function callOpenAICompatible({
         { role: "user", content: userPrompt },
       ],
       temperature: 0.2,
+      ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
     }),
   });
 
@@ -202,7 +235,10 @@ async function callGemini({
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
-      generationConfig: { temperature: 0.2 },
+      generationConfig: {
+        temperature: 0.2,
+        ...(systemPrompt.includes("unique objet JSON valide") ? { responseMimeType: "application/json" } : {}),
+      },
     }),
   });
 
@@ -218,46 +254,57 @@ async function callGemini({
   return { content: text, raw: data };
 }
 
-export async function callAI({ systemPrompt, userPrompt, provider = "lovable", model, tool, toolName }: CallAIOpts) {
+export async function callAI({ systemPrompt, userPrompt, provider = "auto", model, tool, toolName }: CallAIOpts) {
   const settings = await loadSettings();
-  const selected = normalizeProvider(provider, settings);
-  const setting = selected === "auto" ? null : getSetting(selected, settings);
-  const finalModel = model ?? setting?.model ?? DEFAULT_MODELS[selected as Exclude<AIProvider, "auto">];
-  const endpoint = setting?.base_url ?? DEFAULT_ENDPOINTS[selected as Exclude<AIProvider, "auto">];
-  const apiKey = setting?.api_key ?? Deno.env.get(
-    selected === "lovable" ? "LOVABLE_API_KEY"
-      : selected === "groq" ? "GROQ_API_KEY"
-      : selected === "openai" ? "OPENAI_API_KEY"
-      : selected === "claude" ? "ANTHROPIC_API_KEY"
-      : "GEMINI_API_KEY",
-  ) ?? "";
-
   const promptSuffix = jsonInstruction(toolName, tool);
   const finalSystemPrompt = promptSuffix ? `${systemPrompt}\n\n${promptSuffix}` : systemPrompt;
   const finalUserPrompt = promptSuffix ? `${userPrompt}\n\n${promptSuffix}` : userPrompt;
+  const candidates = providerCandidates(provider, settings);
+  const errors: string[] = [];
 
-  let result: { content: string; raw: unknown };
-  if (selected === "claude") {
-    result = await callAnthropic({ apiKey, model: finalModel, systemPrompt: finalSystemPrompt, userPrompt: finalUserPrompt });
-  } else if (selected === "gemini") {
-    result = await callGemini({ apiKey, model: finalModel, systemPrompt: finalSystemPrompt, userPrompt: finalUserPrompt });
-  } else {
-    result = await callOpenAICompatible({ endpoint, apiKey, model: finalModel, systemPrompt: finalSystemPrompt, userPrompt: finalUserPrompt });
+  for (const selected of candidates) {
+    const setting = getSetting(selected, settings);
+    const finalModel = model ?? setting?.model ?? DEFAULT_MODELS[selected];
+    const endpoint = setting?.base_url ?? DEFAULT_ENDPOINTS[selected];
+    const apiKey = setting?.api_key ?? envKeyForProvider(selected);
+
+    if (!apiKey) {
+      errors.push(`${selected}: clé ${envNameForProvider(selected)} absente`);
+      continue;
+    }
+
+    try {
+      let result: { content: string; raw: unknown };
+      if (selected === "claude") {
+        result = await callAnthropic({ apiKey, model: finalModel, systemPrompt: finalSystemPrompt, userPrompt: finalUserPrompt });
+      } else if (selected === "gemini") {
+        result = await callGemini({ apiKey, model: finalModel, systemPrompt: finalSystemPrompt, userPrompt: finalUserPrompt });
+      } else {
+        result = await callOpenAICompatible({ endpoint, apiKey, model: finalModel, systemPrompt: finalSystemPrompt, userPrompt: finalUserPrompt, jsonMode: Boolean(tool && toolName) });
+      }
+
+      if (!result.content) throw new Error("Empty AI response");
+
+      if (tool && toolName) {
+        return {
+          provider: selected,
+          parsed: extractJson(result.content),
+          raw: result.raw,
+        };
+      }
+
+      return {
+        provider: selected,
+        content: result.content,
+        raw: result.raw,
+      };
+    } catch (e) {
+      const message = (e as Error).message;
+      errors.push(`${selected}: ${message}`);
+      if (provider !== "auto") throw e;
+    }
   }
 
-  if (!result.content) throw new Error("Empty AI response");
-
-  if (tool && toolName) {
-    return {
-      provider: selected,
-      parsed: extractJson(result.content),
-      raw: result.raw,
-    };
-  }
-
-  return {
-    provider: selected,
-    content: result.content,
-    raw: result.raw,
-  };
+  const detail = errors.length ? errors.join(" | ") : "aucun provider configuré";
+  throw new Error(`Aucune API IA fonctionnelle (${detail})`);
 }

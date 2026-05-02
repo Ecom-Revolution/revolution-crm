@@ -12,6 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Briefcase, Plus, Search, Sparkles, Loader2, Mail, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { StatCard } from "@/components/StatCard";
+import { functionErrorMessage } from "@/lib/functionErrors";
 
 interface Client {
   id: string;
@@ -81,7 +82,7 @@ export default function Clients() {
     setReactivating(true); setReactivationResults([]);
     const { data, error } = await supabase.functions.invoke("agent-reactivation", { body: { days: 60 } });
     setReactivating(false);
-    if (error) { toast.error(error.message); return; }
+    if (error || data?.error) { toast.error(data?.error ?? await functionErrorMessage(error)); return; }
     setReactivationResults(data?.messages ?? []);
     toast.success(`${data?.messages?.length ?? 0} messages générés`);
   };

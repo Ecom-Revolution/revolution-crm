@@ -13,6 +13,15 @@ Ces automatisations utilisent uniquement Supabase, les Edge Functions existantes
 - Client actif depuis 60 jours : chercher upsell.
 - Client dormant/churned : lancer Agent Reactivation.
 
+## Automatisation active
+
+- Depuis une fiche prospect, le bouton `Séquence auto 3 étapes` crée une séquence sur le canal actif.
+- Le premier message est généré immédiatement en brouillon.
+- Les relances suivantes sont planifiées automatiquement à J+3 puis J+7.
+- La page Funnel permet de lancer manuellement le runner avec `Lancer automations`.
+- Vercel Cron appelle `/api/automation-runner` une fois par jour en plan gratuit Hobby et déclenche `sequence-runner` via `CRON_SECRET`.
+- Pour lancer les séquences plus souvent sans payer, utilise le bouton manuel `Lancer automations` dans Funnel.
+
 ## Mesures gratuites dans la page Funnel
 
 - Hot leads par score.

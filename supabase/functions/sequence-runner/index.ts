@@ -6,72 +6,37 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
-import { requireAdminOrCron } from "../_shared/auth.ts";
+import { getAdminClient, requireUser } from "../_shared/auth.ts";
+import { generateSequenceMessage } from "../_shared/outreach.ts";
 
 const RELAY_DELAYS_DAYS = [3, 4, 7]; // entre étape n et n+1
 
-const CHANNEL_RULES: Record<string, string> = {
-  email: "Email pro 90-150 mots. Objet (max 50 char). Personnalisé. CTA call 15min.",
-  whatsapp: "Message WhatsApp 40-70 mots, ton humain. 1-2 emojis max.",
-  linkedin: "Note LinkedIn 280 caractères MAX.",
-  instagram: "DM Insta 30-60 mots, casual pro.",
-  tiktok: "DM TikTok 20-40 mots, très court.",
-  sms: "SMS 160 caractères MAX.",
-};
+async function runnerAccess(req: Request) {
+  const cronSecret = Deno.env.get("CRON_SECRET");
+  const providedSecret = req.headers.get("x-cron-secret");
+  if (cronSecret && providedSecret && providedSecret === cronSecret) {
+    return { scope: "all" as const, userId: null as string | null };
+  }
 
-async function generateMessage(prospect: any, channel: string, step: number, tone?: string, custom_angle?: string) {
-  const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
-  const isFollowUp = step > 0;
-  const followUpHint = step === 1 ? "C'est la 1ère RELANCE (le 1er message n'a pas eu de réponse). Référence brièvement le 1er échange sans réexpliquer tout. Plus court, plus direct, nouvel angle."
-    : step === 2 ? "C'est la 2ème RELANCE. Très court. Tente le 'breakup email' : dernière tentative, demande poliment si on doit clore le sujet."
-    : "";
-  const analysis = prospect.digital_analysis ?? null;
-  const summary = analysis ? `Analyse : score ${analysis.score}/100 ; pain points : ${(analysis.pain_points ?? []).join(", ")} ; angle : ${analysis.angle ?? "—"}` : "";
+  const auth = await requireUser(req);
+  if (auth instanceof Response) return auth;
 
-  const tool = {
-    type: "function",
-    function: {
-      name: "generate_message",
-      parameters: {
-        type: "object",
-        properties: {
-          subject: { type: "string" },
-          content: { type: "string" },
-        },
-        required: ["subject", "content"],
-        additionalProperties: false,
-      },
-    },
-  };
-  const systemPrompt = `Tu es copywriter outbound expert SMMA. Règles canal "${channel}" : ${CHANNEL_RULES[channel] ?? ""}. Ton : ${tone ?? "pro humain direct"}. Pas de formules bateau. Personnalise avec UN détail concret.`;
-  const userPrompt = `Prospect : ${prospect.name} (${prospect.sector ?? "—"}, ${prospect.city ?? "—"})
-Site : ${prospect.website ?? "—"} | Note Google : ${prospect.rating ?? "—"} (${prospect.reviews_count ?? 0} avis)
-${summary}
-${custom_angle ? `Angle : ${custom_angle}` : ""}
-${isFollowUp ? `\n!! ${followUpHint} !!` : ""}
-Génère le message ${channel} ${isFollowUp ? `de relance n°${step}` : "d'ouverture"}.`;
+  const admin = getAdminClient();
+  const { data, error } = await admin
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", auth.user.id)
+    .eq("role", "admin")
+    .maybeSingle();
+  if (error) throw new Error(error.message);
 
-  const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "google/gemini-2.5-flash",
-      messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
-      tools: [tool],
-      tool_choice: { type: "function", function: { name: "generate_message" } },
-    }),
-  });
-  if (!r.ok) throw new Error(`AI ${r.status}: ${await r.text()}`);
-  const j = await r.json();
-  const tc = j.choices?.[0]?.message?.tool_calls?.[0];
-  if (!tc) throw new Error("No tool call");
-  return JSON.parse(tc.function.arguments) as { subject: string; content: string };
+  return { scope: data ? "all" as const : "own" as const, userId: auth.user.id };
 }
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
-    const access = await requireAdminOrCron(req);
+    const access = await runnerAccess(req);
     if (access instanceof Response) return access;
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -79,12 +44,14 @@ Deno.serve(async (req) => {
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
     const now = new Date().toISOString();
-    const { data: due, error } = await admin
+    let query = admin
       .from("outreach_sequences")
       .select("*, prospects(*)")
       .eq("status", "active")
       .lte("next_run_at", now)
       .limit(20);
+    if (access.scope === "own") query = query.eq("created_by", access.userId);
+    const { data: due, error } = await query;
     if (error) return jsonResponse({ error: error.message }, 500);
 
     const processed: any[] = [];
@@ -108,7 +75,7 @@ Deno.serve(async (req) => {
       }
 
       try {
-        const msg = await generateMessage(prospect, seq.channel, seq.current_step, seq.tone, seq.custom_angle);
+        const msg = await generateSequenceMessage({ prospect, channel: seq.channel, step: seq.current_step, tone: seq.tone, custom_angle: seq.custom_angle });
         await admin.from("outreach_messages").insert({
           prospect_id: prospect.id,
           channel: seq.channel,

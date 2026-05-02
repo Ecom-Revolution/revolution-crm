@@ -43,8 +43,8 @@ Gratuit ou freemium :
 
 Configuration actuelle :
 
-- Lovable AI Gateway si `LOVABLE_API_KEY` est disponible.
-- Groq optionnel si `GROQ_API_KEY` est configurée.
+- Gemini, Groq, Claude ou OpenAI selon les clés configurées.
+- Groq utile en fallback rapide et peu cher.
 
 À vérifier avant production :
 

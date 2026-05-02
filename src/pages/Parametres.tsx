@@ -21,7 +21,6 @@ interface IntegrationRow {
   label: string;
   kind: string;
   enabled: boolean;
-  api_key: string | null;
   base_url: string | null;
   model: string | null;
   notes: string | null;
@@ -40,6 +39,16 @@ interface IntegrationDraft {
   model: string;
   notes: string;
   priority: number;
+}
+interface IntegrationStatus {
+  provider: string;
+  label: string;
+  ok: boolean;
+  configured: boolean;
+  enabled: boolean;
+  model: string;
+  source: "server_secret" | "database" | "missing";
+  message: string;
 }
 
 const draftFromCatalog = (item: typeof AI_PROVIDER_CATALOG[number]): IntegrationDraft => ({
@@ -62,6 +71,7 @@ export default function Parametres() {
   const [saving, setSaving] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [integrationRows, setIntegrationRows] = useState<IntegrationRow[]>([]);
+  const [integrationStatuses, setIntegrationStatuses] = useState<IntegrationStatus[]>([]);
   const [drafts, setDrafts] = useState<Record<string, IntegrationDraft>>({});
   const [savingProvider, setSavingProvider] = useState<string | null>(null);
   const [testingProvider, setTestingProvider] = useState<string | null>(null);
@@ -69,14 +79,15 @@ export default function Parametres() {
   const load = async () => {
     if (!user) return;
     setLoading(true);
-    const [{ data: p }, { data: roles }, { data: profiles }, { data: integrations }] = await Promise.all([
+    const [{ data: p }, { data: roles }, { data: profiles }, { data: integrations }, statusResult] = await Promise.all([
       supabase.from("profiles").select("full_name, phone").eq("id", user.id).maybeSingle(),
       supabase.from("user_roles").select("user_id, role"),
       supabase.from("profiles").select("id, full_name"),
       supabase.from("integration_settings")
-        .select("provider,label,kind,enabled,api_key,base_url,model,notes,priority,last_test_status,last_test_message,last_test_at")
+        .select("provider,label,kind,enabled,base_url,model,notes,priority,last_test_status,last_test_message,last_test_at")
         .eq("kind", "ai")
         .order("priority", { ascending: true }),
+      supabase.functions.invoke("integration-test", { body: { statusOnly: true } }).catch(() => ({ data: null, error: true })),
     ]);
 
     if (p) setProfile({ full_name: p.full_name ?? "", phone: p.phone ?? "" });
@@ -91,6 +102,7 @@ export default function Parametres() {
 
     const rows = (integrations ?? []) as IntegrationRow[];
     setIntegrationRows(rows);
+    setIntegrationStatuses((statusResult as { data?: { results?: IntegrationStatus[] } })?.data?.results ?? []);
 
     const nextDrafts: Record<string, IntegrationDraft> = {};
     for (const item of AI_PROVIDER_CATALOG) {
@@ -101,7 +113,7 @@ export default function Parametres() {
             label: row.label,
             kind: row.kind,
             enabled: row.enabled,
-            api_key: row.api_key ?? "",
+            api_key: "",
             base_url: row.base_url ?? "",
             model: row.model ?? "",
             notes: row.notes ?? "",
@@ -142,7 +154,7 @@ export default function Parametres() {
       label: draft.label,
       kind: draft.kind,
       enabled: draft.enabled,
-      api_key: draft.api_key.trim() || null,
+      api_key: null,
       base_url: draft.base_url.trim() || null,
       model: draft.model.trim() || null,
       notes: draft.notes.trim() || null,
@@ -150,7 +162,10 @@ export default function Parametres() {
       updated_by: user?.id ?? null,
     };
 
-    const { error } = await supabase.from("integration_settings").upsert(payload, { onConflict: "provider" });
+    const existing = integrationRows.find((row) => row.provider === provider);
+    const { error } = existing
+      ? await supabase.from("integration_settings").update(payload).eq("provider", provider)
+      : await supabase.from("integration_settings").insert(payload);
     setSavingProvider(null);
     if (error) { toast.error(error.message); return; }
     toast.success(`${draft.label} enregistre`);
@@ -163,13 +178,27 @@ export default function Parametres() {
     const { data, error } = await supabase.functions.invoke("integration-test", { body: { provider } });
     setTestingProvider(null);
     if (error) { toast.error(error.message); return; }
+    if (data?.results) setIntegrationStatuses(data.results);
     const result = data?.results?.[0];
     if (result?.ok) toast.success(`${provider} OK`);
     else toast.error(result?.message ?? "Test echoue");
     load();
   };
 
+  const testAllIntegrations = async () => {
+    if (!isAdmin) { toast.error("Reserve aux admins"); return; }
+    setTestingProvider("all");
+    const { data, error } = await supabase.functions.invoke("integration-test", { body: {} });
+    setTestingProvider(null);
+    if (error) { toast.error(error.message); return; }
+    if (data?.results) setIntegrationStatuses(data.results);
+    const passed = (data?.results ?? []).filter((result: IntegrationStatus) => result.ok).length;
+    toast.success(`${passed}/${data?.results?.length ?? 0} integrations OK`);
+    load();
+  };
+
   const aiRowsByProvider = useMemo(() => Object.fromEntries(integrationRows.map((row) => [row.provider, row])), [integrationRows]);
+  const aiStatusByProvider = useMemo(() => Object.fromEntries(integrationStatuses.map((status) => [status.provider, status])), [integrationStatuses]);
 
   if (loading) return <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>;
 
@@ -261,25 +290,46 @@ export default function Parametres() {
               ))}
             </div>
 
+            <Card className="border-dashed p-4 text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">Chemin recommande sans frais annexes</p>
+              <p className="mt-1">
+                Branche d'abord Gemini Free Tier comme cerveau principal, puis Groq Free Plan comme fallback. Les agents, le scraping et les exports restent utilisables depuis la web app mobile, sans CLI locale.
+              </p>
+            </Card>
+
             <Card className="p-6 space-y-4">
               <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                 <div>
                   <h2 className="text-lg font-semibold">Providers IA configurables</h2>
                   <p className="text-sm text-muted-foreground">
-                    Ajoute tes clefs ici. Le CRM peut ensuite router automatiquement les agents vers Gemini, Claude, OpenAI, Groq ou le gateway Lovable.
+                    Ajoute tes clefs ici. Le CRM peut ensuite router automatiquement les agents vers Gemini ou Groq sans carte bancaire.
                   </p>
                 </div>
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <PlugZap className="h-4 w-4 text-primary" />
-                  {Object.keys(aiRowsByProvider).length} providers detectes
+                  {integrationStatuses.filter((status) => status.configured).length} providers configures
                 </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={testAllIntegrations} disabled={!isAdmin || testingProvider === "all"}>
+                  {testingProvider === "all" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <TestTube2 className="mr-2 h-4 w-4" />}
+                  Tester toutes les APIs
+                </Button>
               </div>
 
               <div className="grid gap-4 xl:grid-cols-2">
                 {AI_PROVIDER_CATALOG.map((item) => {
                   const draft = drafts[item.provider] ?? draftFromCatalog(item);
                   const row = aiRowsByProvider[item.provider];
-                  const connected = Boolean(row?.enabled && row?.api_key);
+                  const status = aiStatusByProvider[item.provider] as IntegrationStatus | undefined;
+                  const configured = Boolean(status?.configured);
+                  const connected = Boolean(draft.enabled && configured);
+                  const sourceLabel = status?.source === "server_secret"
+                    ? "Secret serveur"
+                    : status?.source === "database"
+                      ? "Base CRM"
+                      : "Cle absente";
 
                   return (
                     <Card key={item.provider} className="p-5 space-y-4">
@@ -326,16 +376,10 @@ export default function Parametres() {
                           />
                         </div>
                         <div className="grid gap-2">
-                          <Label>Cle API</Label>
+                          <Label>Statut cle</Label>
                           <Input
-                            type="password"
-                            value={draft.api_key}
-                            onChange={(e) => setDrafts((prev) => ({
-                              ...prev,
-                              [item.provider]: { ...draft, api_key: e.target.value },
-                            }))}
-                            placeholder={item.needsApiKey ? "sk-..." : "Optionnel"}
-                            disabled={!isAdmin}
+                            value={status?.message ?? sourceLabel}
+                            disabled
                           />
                         </div>
                         <div className="grid gap-2">
@@ -381,14 +425,16 @@ export default function Parametres() {
                           {savingProvider === item.provider ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                           Sauvegarder
                         </Button>
-                        <Button variant="outline" onClick={() => testIntegration(item.provider)} disabled={!isAdmin || testingProvider === item.provider || !connected}>
+                        <Button variant="outline" onClick={() => testIntegration(item.provider)} disabled={!isAdmin || testingProvider === item.provider || !configured}>
                           {testingProvider === item.provider ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <TestTube2 className="mr-2 h-4 w-4" />}
                           Tester
                         </Button>
                         <div className="text-xs text-muted-foreground">
-                          {row?.last_test_status === "success" && `Dernier test: ${row.last_test_message ?? "OK"}`}
-                          {row?.last_test_status === "error" && `Dernier test: ${row.last_test_message ?? "Erreur"}`}
-                          {!row?.last_test_status && item.value}
+                          {status?.ok && `Statut serveur: ${status.message}`}
+                          {!status?.ok && status?.message}
+                          {!status && row?.last_test_status === "success" && `Dernier test: ${row.last_test_message ?? "OK"}`}
+                          {!status && row?.last_test_status === "error" && `Dernier test: ${row.last_test_message ?? "Erreur"}`}
+                          {!status && !row?.last_test_status && item.value}
                         </div>
                       </div>
                     </Card>

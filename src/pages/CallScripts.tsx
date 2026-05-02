@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { exportToCSV } from "@/lib/export";
 import { formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
+import { functionErrorMessage } from "@/lib/functionErrors";
 
 interface Script {
   id: string; prospect_id: string | null; title: string; objective: string | null;
@@ -76,7 +77,7 @@ export default function CallScripts() {
       body: { prospect_id: it.prospect_id, tone: it.tone ?? undefined, objective: it.objective ?? undefined },
     });
     setRegenerating(null);
-    if (error || data?.error) return toast.error(data?.error ?? error?.message ?? "Erreur");
+    if (error || data?.error) return toast.error(data?.error ?? await functionErrorMessage(error));
     toast.success("Nouveau script généré");
     load();
   };

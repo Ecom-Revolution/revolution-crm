@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { FileSearch, Loader2, ExternalLink, Sparkles, AlertTriangle, CheckCircle2, Gauge, TrendingUp, Search, MousePointerClick, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
+import { functionErrorMessage } from "@/lib/functionErrors";
 
 export default function Audits() {
   const [url, setUrl] = useState("");
@@ -25,7 +26,7 @@ export default function Audits() {
     setRunning(true);
     const { data, error } = await supabase.functions.invoke("audit-site", { body: { url: url.trim() } });
     setRunning(false);
-    if (error || data?.error) { toast.error(error?.message || data.error); return; }
+    if (error || data?.error) { toast.error(data?.error || await functionErrorMessage(error)); return; }
     toast.success("Audit terminé !");
     setUrl("");
     setSelected(data.audit);
@@ -45,7 +46,7 @@ export default function Audits() {
               </div>
               <div>
                 <h3 className="font-semibold">Lancer un nouvel audit</h3>
-                <p className="text-sm text-muted-foreground">PageSpeed + SEO on-page + tracking pixels + conversion + recommandations IA</p>
+                <p className="text-sm text-muted-foreground">SEO on-page + tracking pixels + conversion + recommandations IA. PageSpeed est utilisé si un quota est disponible.</p>
               </div>
             </div>
             <div className="mt-4 flex flex-col gap-2 sm:flex-row">
@@ -54,7 +55,7 @@ export default function Audits() {
                 {running ? <><Loader2 className="h-4 w-4 animate-spin" /> Audit en cours...</> : <><Sparkles className="h-4 w-4" /> Lancer l'audit</>}
               </Button>
             </div>
-            <p className="mt-2 text-xs text-muted-foreground">Outils gratuits : PageSpeed Insights, crawl HTML, robots.txt, sitemap.xml, détection pixels/CTA/formulaires.</p>
+            <p className="mt-2 text-xs text-muted-foreground">Outils gratuits : crawl HTML, robots.txt, sitemap.xml, détection pixels/CTA/formulaires. PageSpeed reste optionnel.</p>
           </div>
         </Card>
 

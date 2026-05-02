@@ -42,11 +42,10 @@ npm run build
 supabase link --project-ref <project-ref>
 supabase db push
 supabase functions deploy
-supabase secrets set LOVABLE_API_KEY=...
 supabase secrets set CRON_SECRET=...
 ```
 
-Ajoute aussi les clés optionnelles selon les intégrations utilisées : `SERPAPI_KEY`, `HUNTER_API_KEY`, `APIFY_API_TOKEN`, `PAPPERS_API_KEY`, `GROQ_API_KEY`.
+Ajoute aussi les clés optionnelles selon les intégrations utilisées : `SERPAPI_KEY`, `HUNTER_API_KEY`, `APIFY_API_TOKEN`, `PAPPERS_API_KEY`, `GROQ_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`.
 
 ## Outils gratuits
 

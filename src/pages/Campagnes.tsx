@@ -11,6 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Megaphone, Plus, Loader2, Trash2, Sparkles, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 import { StatCard } from "@/components/StatCard";
+import { functionErrorMessage } from "@/lib/functionErrors";
 
 interface Campaign {
   id: string; name: string; client_id: string; platform: string; monthly_budget: number;
@@ -70,7 +71,7 @@ export default function Campagnes() {
     setBriefing(clientId); setBriefResult(null);
     const { data, error } = await supabase.functions.invoke("agent-creative-brief", { body: { client_id: clientId, platform, objective: "leads" } });
     setBriefing(null);
-    if (error) { toast.error(error.message); return; }
+    if (error || data?.error) { toast.error(data?.error ?? await functionErrorMessage(error)); return; }
     setBriefResult(data?.brief);
     toast.success("Brief créa généré ✨");
   };

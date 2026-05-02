@@ -6,7 +6,9 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/StatCard";
-import { AlertTriangle, ArrowRight, BarChart3, CalendarClock, Euro, Flame, MessageSquare, PhoneCall, Send, Target, TrendingUp } from "lucide-react";
+import { AlertTriangle, ArrowRight, BarChart3, CalendarClock, Euro, Flame, Loader2, MessageSquare, PhoneCall, PlayCircle, Send, Target, TrendingUp } from "lucide-react";
+import { toast } from "sonner";
+import { functionErrorMessage } from "@/lib/functionErrors";
 
 type Prospect = {
   id: string;
@@ -68,30 +70,39 @@ export default function Funnel() {
   const [sequences, setSequences] = useState<Sequence[]>([]);
   const [events, setEvents] = useState<FunnelEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [automationRunning, setAutomationRunning] = useState(false);
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      const now = new Date().toISOString();
-      const since = new Date(Date.now() - 30 * 86400_000).toISOString();
-      const [{ data: ps }, { data: inv }, { data: appts }, { data: msgs }, { data: seqs }, { data: evts }] = await Promise.all([
-        supabase.from("prospects").select("id,name,status,source,city,sector,score,analysis_score,next_action_at,last_contact_at,digital_analysis,created_at").order("created_at", { ascending: false }).limit(300),
-        supabase.from("invoices").select("id,amount,status,due_date").neq("status", "paid").limit(100),
-        supabase.from("appointments").select("id,title,scheduled_at").gte("scheduled_at", now).order("scheduled_at", { ascending: true }).limit(20),
-        supabase.from("outreach_messages").select("id,prospect_id,channel,status,created_at,sent_at").gte("created_at", since).limit(500),
-        supabase.from("outreach_sequences").select("id,prospect_id,channel,status,next_run_at").limit(200),
-        supabase.from("funnel_events" as never).select("*").gte("created_at", since).order("created_at", { ascending: false }).limit(200),
-      ]);
-      setProspects((ps ?? []) as Prospect[]);
-      setInvoices((inv ?? []) as Invoice[]);
-      setAppointments((appts ?? []) as Appointment[]);
-      setMessages((msgs ?? []) as OutreachMessage[]);
-      setSequences((seqs ?? []) as Sequence[]);
-      setEvents((evts ?? []) as unknown as FunnelEvent[]);
-      setLoading(false);
-    };
-    load();
-  }, []);
+  const load = async (showSpinner = true) => {
+    if (showSpinner) setLoading(true);
+    const now = new Date().toISOString();
+    const since = new Date(Date.now() - 30 * 86400_000).toISOString();
+    const [{ data: ps }, { data: inv }, { data: appts }, { data: msgs }, { data: seqs }, { data: evts }] = await Promise.all([
+      supabase.from("prospects").select("id,name,status,source,city,sector,score,analysis_score,next_action_at,last_contact_at,digital_analysis,created_at").order("created_at", { ascending: false }).limit(300),
+      supabase.from("invoices").select("id,amount,status,due_date").neq("status", "paid").limit(100),
+      supabase.from("appointments").select("id,title,scheduled_at").gte("scheduled_at", now).order("scheduled_at", { ascending: true }).limit(20),
+      supabase.from("outreach_messages").select("id,prospect_id,channel,status,created_at,sent_at").gte("created_at", since).limit(500),
+      supabase.from("outreach_sequences").select("id,prospect_id,channel,status,next_run_at").limit(200),
+      supabase.from("funnel_events").select("*").gte("created_at", since).order("created_at", { ascending: false }).limit(200),
+    ]);
+    setProspects((ps ?? []) as Prospect[]);
+    setInvoices((inv ?? []) as Invoice[]);
+    setAppointments((appts ?? []) as Appointment[]);
+    setMessages((msgs ?? []) as OutreachMessage[]);
+    setSequences((seqs ?? []) as Sequence[]);
+    setEvents((evts ?? []) as unknown as FunnelEvent[]);
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const runAutomation = async () => {
+    setAutomationRunning(true);
+    const { data, error } = await supabase.functions.invoke("sequence-runner", { body: {} });
+    setAutomationRunning(false);
+    if (error || data?.error) { toast.error(data?.error ?? await functionErrorMessage(error)); return; }
+    toast.success(`${data?.processed_count ?? 0} séquence${data?.processed_count > 1 ? "s" : ""} traitée${data?.processed_count > 1 ? "s" : ""}`);
+    load(false);
+  };
 
   const hotLeads = useMemo(() => prospects.filter((p) => !["client", "perdu"].includes(p.status) && scoreOf(p) >= 70), [prospects]);
   const needsOffer = useMemo(() => prospects.filter((p) => ["rdv_effectue", "proposition", "negociation"].includes(p.status)), [prospects]);
@@ -162,7 +173,15 @@ export default function Funnel() {
 
   return (
     <div>
-      <PageHeader title="Funnel" description="Actions prioritaires pour transformer les leads en clients" />
+      <PageHeader title="Funnel" description="Actions prioritaires pour transformer les leads en clients">
+        <Button variant="outline" onClick={() => load(false)} disabled={loading}>
+          Actualiser
+        </Button>
+        <Button variant="hero" onClick={runAutomation} disabled={automationRunning}>
+          {automationRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
+          Lancer automations
+        </Button>
+      </PageHeader>
 
       <div className="space-y-6 p-6">
         <div className="grid gap-4 md:grid-cols-4">

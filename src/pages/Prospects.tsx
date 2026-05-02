@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { KanbanBoard, KanbanStatus } from "@/components/prospects/KanbanBoard";
 import { exportToCSV } from "@/lib/export";
 import { logFunnelEvent } from "@/lib/funnelEvents";
+import { functionErrorMessage } from "@/lib/functionErrors";
 
 type Status = "a_contacter" | "contacte" | "rdv_pris" | "rdv_effectue" | "proposition" | "negociation" | "client" | "perdu" | "injoignable";
 type Source = "google_maps" | "linkedin" | "instagram" | "tiktok" | "pages_jaunes" | "societe_com" | "manual" | "referral" | "website";
@@ -67,7 +68,7 @@ export default function Prospects() {
       body: { prospect_ids: Array.from(selectedIds) },
     });
     setBulkLoading(false);
-    if (error || data?.error) { toast.error(error?.message || data.error); return; }
+    if (error || data?.error) { toast.error(data?.error || await functionErrorMessage(error)); return; }
     toast.success(`Analyse IA : ${data.success}/${data.total} prospects analysés`);
     setSelectedIds(new Set());
     fetch();

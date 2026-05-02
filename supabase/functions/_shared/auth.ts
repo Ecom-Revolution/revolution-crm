@@ -15,7 +15,7 @@ export function getAdminClient() {
 
 export async function requireUser(req: Request): Promise<AuthContext | Response> {
   const url = Deno.env.get("SUPABASE_URL");
-  const publishableKey = Deno.env.get("SUPABASE_PUBLISHABLE_KEY");
+  const publishableKey = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY");
   if (!url || !publishableKey) {
     return jsonResponse({ error: "Supabase auth configuration missing" }, 500);
   }

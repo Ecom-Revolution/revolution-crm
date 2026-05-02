@@ -1,8 +1,9 @@
-// Analyse les besoins digitaux d'un prospect via Lovable AI.
+// Analyse les besoins digitaux d'un prospect via le routeur IA interne.
 // Renvoie : pain points, services recommandés, score affiné, note synthèse.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
+import { callAI } from "../_shared/ai.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -10,11 +11,9 @@ Deno.serve(async (req) => {
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) return jsonResponse({ error: "LOVABLE_API_KEY missing" }, 500);
 
     const authHeader = req.headers.get("Authorization") ?? "";
-    const userClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!, {
+    const userClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY")!, {
       global: { headers: { Authorization: authHeader } },
     });
     const { data: { user } } = await userClient.auth.getUser();
@@ -99,34 +98,14 @@ Tu raisonnes comme un directeur commercial SMMA : budget réaliste, probabilité
       },
     };
 
-    const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: `Analyse ce prospect et identifie tous ses besoins digitaux :\n\n${context}` },
-        ],
-        tools: [tool],
-        tool_choice: { type: "function", function: { name: "analyze_prospect" } },
-      }),
+    const aiResult = await callAI({
+      systemPrompt,
+      userPrompt: `Analyse ce prospect et identifie tous ses besoins digitaux :\n\n${context}`,
+      provider: "auto",
+      tool,
+      toolName: "analyze_prospect",
     });
-
-    if (!aiResp.ok) {
-      const t = await aiResp.text();
-      if (aiResp.status === 429) return jsonResponse({ error: "Rate limit IA atteint, réessaie dans quelques secondes." }, 429);
-      if (aiResp.status === 402) return jsonResponse({ error: "Crédits IA épuisés. Recharge dans Settings → Workspace → Usage." }, 402);
-      return jsonResponse({ error: `IA error: ${t}` }, 500);
-    }
-
-    const aiData = await aiResp.json();
-    const toolCall = aiData.choices?.[0]?.message?.tool_calls?.[0];
-    if (!toolCall) return jsonResponse({ error: "No tool call from AI" }, 500);
-    const analysis = JSON.parse(toolCall.function.arguments);
+    const analysis = aiResult.parsed;
 
     const { error: upErr } = await admin.from("prospects").update({
       digital_analysis: analysis,

@@ -1,1 +1,4 @@
-project_id = "ayhojwzfynahnxviajhj"
+project_id = "fhihgvudsgntwpmzrngo"
+
+[functions.sequence-runner]
+verify_jwt = false

@@ -2,9 +2,12 @@ import { PageHeader } from "@/components/PageHeader";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Bot, MessageSquare, FileSearch, BarChart3, Search, Sparkles, Mail, Linkedin, Globe, Zap, PhoneCall, Swords, Palette, RotateCcw, Upload, Euro } from "lucide-react";
+import { Bot, MessageSquare, FileSearch, BarChart3, Search, Sparkles, Mail, Linkedin, Globe, Zap, PhoneCall, Swords, Palette, RotateCcw, Upload, Euro, Check, X, Loader2, TestTube2 } from "lucide-react";
 import { LucideIcon } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 interface Agent {
   id: string;
@@ -18,6 +21,17 @@ interface Agent {
   badge?: "new" | "free";
 }
 
+interface IntegrationStatus {
+  provider: string;
+  label: string;
+  ok: boolean;
+  configured: boolean;
+  enabled: boolean;
+  model: string;
+  source: "server_secret" | "database" | "missing";
+  message: string;
+}
+
 const AGENTS: Agent[] = [
   {
     id: "audit",
@@ -25,7 +39,7 @@ const AGENTS: Agent[] = [
     description: "Audit SEO + perf + UX automatique d'un site, avec recommandations IA chiffrées prêtes à pitcher.",
     icon: FileSearch,
     category: "Lead magnet",
-    features: ["Score Lighthouse mobile + desktop", "Plan 7j/30j", "Offre packagée à pitcher"],
+    features: ["Crawl SEO gratuit + PageSpeed si configuré", "Plan 7j/30j", "Offre packagée à pitcher"],
     route: "/audits",
     cta: "Lancer un audit",
   },
@@ -180,6 +194,29 @@ const AGENTS: Agent[] = [
 
 export default function Agents() {
   const navigate = useNavigate();
+  const [statuses, setStatuses] = useState<IntegrationStatus[]>([]);
+  const [testing, setTesting] = useState(false);
+
+  const loadStatuses = async (test = false) => {
+    setTesting(test);
+    const { data, error } = await supabase.functions.invoke("integration-test", { body: test ? {} : { statusOnly: true } });
+    setTesting(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    setStatuses(data?.results ?? []);
+    if (test) {
+      const ok = (data?.results ?? []).filter((item: IntegrationStatus) => item.ok).length;
+      toast.success(`${ok}/${data?.results?.length ?? 0} APIs OK`);
+    }
+  };
+
+  useEffect(() => { loadStatuses(false); }, []);
+
+  const freeStatuses = statuses.filter((status) => ["gemini", "groq"].includes(status.provider));
+  const readyProviders = statuses.filter((status) => status.ok).length;
+
   return (
     <div>
       <PageHeader title="Agents IA" description="Vos collaborateurs autonomes — prospection, audit, reporting, relance, closing" />
@@ -195,14 +232,50 @@ export default function Agents() {
               <div>
                 <h2 className="text-lg font-semibold">{AGENTS.length} agents IA opérationnels</h2>
                 <p className="mt-1 text-sm text-muted-foreground max-w-2xl">
-                  Tous propulsés par <strong>Lovable AI</strong> (Gemini gratuit) + <strong>Groq</strong> (Llama 3.3 70B, optionnel) + APIs gratuites
-                  (Google PageSpeed, DuckDuckGo, Hunter free tier). Aucun coût caché.
+                  Tous propulsés par <strong>Gemini</strong>, <strong>Groq</strong>, <strong>Claude</strong> ou <strong>OpenAI</strong> selon la configuration,
+                  plus des APIs gratuites (Google PageSpeed, DuckDuckGo, Hunter free tier). Aucun coût caché.
                 </p>
               </div>
             </div>
             <Badge variant="outline" className="bg-success/15 text-success border-success/30 gap-1">
-              <Zap className="h-3 w-3" /> {AGENTS.length}/{AGENTS.length} actifs
+              <Zap className="h-3 w-3" /> {readyProviders} API{readyProviders > 1 ? "s" : ""} prête{readyProviders > 1 ? "s" : ""}
             </Badge>
+          </div>
+        </Card>
+
+        <Card className="p-5">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-base font-semibold">Agent Manager</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Statut temps réel des cerveaux IA utilisés par les agents.</p>
+            </div>
+            <Button variant="outline" onClick={() => loadStatuses(true)} disabled={testing}>
+              {testing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <TestTube2 className="mr-2 h-4 w-4" />}
+              Tester les APIs
+            </Button>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {(freeStatuses.length ? freeStatuses : statuses).map((status) => (
+              <div key={status.provider} className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium">{status.label}</p>
+                    <Badge variant="outline">{status.model}</Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">{status.message}</p>
+                </div>
+                {status.ok ? (
+                  <Badge className="bg-success/15 text-success border-success/30 gap-1"><Check className="h-3 w-3" />OK</Badge>
+                ) : (
+                  <Badge variant="outline" className="gap-1"><X className="h-3 w-3" />Erreur</Badge>
+                )}
+              </div>
+            ))}
+            {!statuses.length && (
+              <div className="rounded-lg border border-border p-3 text-sm text-muted-foreground">
+                Chargement du statut API...
+              </div>
+            )}
           </div>
         </Card>
 

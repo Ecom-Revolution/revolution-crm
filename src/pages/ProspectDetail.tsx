@@ -12,10 +12,12 @@ import {
   ArrowLeft, Sparkles, ExternalLink, Phone, Mail, MapPin, Globe, Building2,
   Star, Users, TrendingUp, AlertTriangle, CheckCircle2, Loader2, Copy,
   Send, MessageCircle, Linkedin, Instagram, PhoneCall, Swords, X, Euro,
+  Repeat2, CalendarClock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { logFunnelEvent } from "@/lib/funnelEvents";
+import { functionErrorMessage } from "@/lib/functionErrors";
 
 const CHANNELS = [
   { id: "email", label: "Email", icon: Mail, color: "text-blue-400" },
@@ -36,6 +38,7 @@ export default function ProspectDetail() {
   const navigate = useNavigate();
   const [prospect, setProspect] = useState<any>(null);
   const [messages, setMessages] = useState<any[]>([]);
+  const [sequences, setSequences] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [generating, setGenerating] = useState<string | null>(null);
@@ -49,15 +52,18 @@ export default function ProspectDetail() {
   const [compLoading, setCompLoading] = useState(false);
   const [offer, setOffer] = useState<any>(null);
   const [offerLoading, setOfferLoading] = useState(false);
+  const [sequenceLoading, setSequenceLoading] = useState<string | null>(null);
 
   const load = async () => {
     if (!id) return;
-    const [{ data: p }, { data: m }] = await Promise.all([
+    const [{ data: p }, { data: m }, { data: seqs }] = await Promise.all([
       supabase.from("prospects").select("*").eq("id", id).single(),
       supabase.from("outreach_messages").select("*").eq("prospect_id", id).order("created_at", { ascending: false }),
+      supabase.from("outreach_sequences").select("*").eq("prospect_id", id).order("created_at", { ascending: false }),
     ]);
     setProspect(p);
     setMessages(m ?? []);
+    setSequences(seqs ?? []);
     setLoading(false);
   };
 
@@ -79,7 +85,7 @@ export default function ProspectDetail() {
     setAnalyzing(true);
     const { data, error } = await supabase.functions.invoke("analyze-prospect", { body: { prospect_id: id } });
     setAnalyzing(false);
-    if (error || data?.error) { toast.error(data?.error ?? error?.message ?? "Erreur"); return; }
+    if (error || data?.error) { toast.error(data?.error ?? await functionErrorMessage(error)); return; }
     await logFunnelEvent({
       event_type: "lead_analyzed",
       entity_type: "prospect",
@@ -98,7 +104,7 @@ export default function ProspectDetail() {
       body: { prospect_id: id, channel },
     });
     setGenerating(null);
-    if (error || data?.error) { toast.error(data?.error ?? error?.message ?? "Erreur"); return; }
+    if (error || data?.error) { toast.error(data?.error ?? await functionErrorMessage(error)); return; }
     await logFunnelEvent({
       event_type: "message_generated",
       entity_type: "outreach_message",
@@ -114,11 +120,47 @@ export default function ProspectDetail() {
     load();
   };
 
+  const startSequence = async (channel: string) => {
+    setSequenceLoading(channel);
+    const { data, error } = await supabase.functions.invoke("sequence-create", {
+      body: {
+        prospect_id: id,
+        channel,
+        max_steps: 3,
+        run_first_now: true,
+      },
+    });
+    setSequenceLoading(null);
+    if (error || data?.error) { toast.error(data?.error ?? await functionErrorMessage(error)); return; }
+
+    await logFunnelEvent({
+      event_type: "sequence_created",
+      entity_type: "outreach_sequence",
+      entity_id: data?.sequence?.id,
+      prospect_id: id,
+      source: prospect?.source,
+      channel,
+      metadata: { existing: Boolean(data?.existing), first_message_id: data?.first_message?.id },
+    });
+
+    if (data?.first_message) {
+      setActiveChannel(channel);
+      setDraftSubject(data.first_message.subject ?? "");
+      setDraftContent(data.first_message.content ?? "");
+      toast.success("Séquence démarrée, premier message généré");
+    } else if (data?.existing) {
+      toast.info("Une séquence active existe déjà pour ce canal");
+    } else {
+      toast.success("Séquence programmée");
+    }
+    load();
+  };
+
   const runCloser = async () => {
     setCallLoading(true);
     const { data, error } = await supabase.functions.invoke("agent-closer", { body: { prospect_id: id } });
     setCallLoading(false);
-    if (error || data?.error) { toast.error(data?.error ?? error?.message ?? "Erreur"); return; }
+    if (error || data?.error) { toast.error(data?.error ?? await functionErrorMessage(error)); return; }
     setCallScript(data?.script);
     await logFunnelEvent({
       event_type: "call_script_generated",
@@ -134,7 +176,7 @@ export default function ProspectDetail() {
     setCompLoading(true);
     const { data, error } = await supabase.functions.invoke("agent-competitors", { body: { prospect_id: id } });
     setCompLoading(false);
-    if (error || data?.error) { toast.error(data?.error ?? error?.message ?? "Erreur"); return; }
+    if (error || data?.error) { toast.error(data?.error ?? await functionErrorMessage(error)); return; }
     setCompetitors(data?.analysis);
     await logFunnelEvent({
       event_type: "competitors_analyzed",
@@ -151,7 +193,7 @@ export default function ProspectDetail() {
     setOfferLoading(true);
     const { data, error } = await supabase.functions.invoke("agent-offer-builder", { body: { prospect_id: id } });
     setOfferLoading(false);
-    if (error || data?.error) { toast.error(data?.error ?? error?.message ?? "Erreur"); return; }
+    if (error || data?.error) { toast.error(data?.error ?? await functionErrorMessage(error)); return; }
     setOffer(data?.offer);
     await logFunnelEvent({
       event_type: "offer_generated",
@@ -459,10 +501,35 @@ export default function ProspectDetail() {
 
         {/* Outreach multi-canal */}
         <Card className="p-5 lg:col-span-3">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold flex items-center gap-2"><Send className="h-4 w-4 text-primary" /> Outreach multi-canal</h3>
-            {!analysis && <p className="text-xs text-muted-foreground">💡 Lance d'abord l'analyse IA pour des messages mieux ciblés</p>}
+          <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h3 className="font-semibold flex items-center gap-2"><Send className="h-4 w-4 text-primary" /> Outreach multi-canal</h3>
+              {!analysis && <p className="mt-1 text-xs text-muted-foreground">Lance d'abord l'analyse IA pour des messages mieux ciblés.</p>}
+            </div>
+            <Button variant="outline" size="sm" onClick={() => startSequence(activeChannel)} disabled={sequenceLoading === activeChannel}>
+              {sequenceLoading === activeChannel ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Repeat2 className="h-3.5 w-3.5" />}
+              Séquence auto 3 étapes
+            </Button>
           </div>
+
+          {sequences.length > 0 && (
+            <div className="mb-4 flex flex-wrap gap-2 rounded-lg border border-border bg-muted/20 p-3 text-xs">
+              {sequences.slice(0, 5).map((seq) => (
+                <div key={seq.id} className="flex items-center gap-2 rounded-md border border-border bg-background/60 px-2 py-1.5">
+                  <Repeat2 className="h-3.5 w-3.5 text-primary" />
+                  <span className="font-medium">{seq.channel}</span>
+                  <Badge variant={seq.status === "active" ? "secondary" : "outline"}>{seq.status}</Badge>
+                  <span className="text-muted-foreground">étape {seq.current_step}/{seq.max_steps}</span>
+                  {seq.next_run_at && (
+                    <span className="hidden items-center gap-1 text-muted-foreground sm:inline-flex">
+                      <CalendarClock className="h-3 w-3" />
+                      {new Date(seq.next_run_at).toLocaleDateString("fr-FR")}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
 
           <Tabs value={activeChannel} onValueChange={setActiveChannel}>
             <TabsList className="grid w-full grid-cols-5">

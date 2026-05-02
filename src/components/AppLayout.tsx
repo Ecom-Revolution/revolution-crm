@@ -89,7 +89,7 @@ export default function AppLayout() {
 
   const SidebarContent = ({ onNavigate }: { onNavigate?: () => void }) => (
     <>
-      <div className="flex h-20 items-center justify-center border-b border-sidebar-border px-5">
+      <div className="crm-sidebar-brand flex items-center justify-center border-b border-sidebar-border px-5">
         <Logo size="h-12" glow />
       </div>
 
@@ -142,7 +142,7 @@ export default function AppLayout() {
       {/* Main */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Topbar */}
-        <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/80 px-3 backdrop-blur-md md:h-16 md:px-6">
+        <header className="crm-mobile-topbar sticky top-0 z-30 flex shrink-0 items-center gap-2 border-b border-border bg-background/80 backdrop-blur-md">
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon" className="md:hidden" aria-label="Ouvrir le menu">

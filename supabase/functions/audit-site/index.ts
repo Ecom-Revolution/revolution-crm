@@ -3,6 +3,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
+import { callAI } from "../_shared/ai.ts";
 
 const PSI_URL = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed";
 
@@ -262,16 +263,24 @@ function topIssues(audits: Record<string, any>) {
     .map((a: any) => ({ title: a.title, description: a.description, score: a.score }));
 }
 
+function averageScores(values: Array<number | null | undefined>) {
+  const nums = values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  if (!nums.length) return null;
+  return Math.round(nums.reduce((sum, value) => sum + value, 0) / nums.length);
+}
+
+function fmtScore(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? `${value}/100` : "indisponible";
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) return jsonResponse({ error: "LOVABLE_API_KEY missing" }, 500);
 
     const authHeader = req.headers.get("Authorization") ?? "";
-    const userClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!, {
+    const userClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY")!, {
       global: { headers: { Authorization: authHeader } },
     });
     const { data: { user } } = await userClient.auth.getUser();
@@ -300,24 +309,54 @@ Deno.serve(async (req) => {
     }).select("*").single();
     if (insErr) return jsonResponse({ error: insErr.message }, 500);
 
-    // Run PSI mobile + desktop in parallel
-    let mobile, desktop, websiteInspection;
-    try {
-      [mobile, desktop, websiteInspection] = await Promise.all([runPSI(url, "mobile"), runPSI(url, "desktop"), inspectWebsite(url)]);
-    } catch (e) {
-      await admin.from("site_audits").update({ status: "failed" }).eq("id", row.id);
-      return jsonResponse({ error: `PageSpeed failed: ${(e as Error).message}` }, 502);
+    const websiteInspection = await inspectWebsite(url);
+    const pageSpeedEnabled = Boolean(Deno.env.get("PAGESPEED_API_KEY"));
+    let mobile: Awaited<ReturnType<typeof runPSI>> | null = null;
+    let desktop: Awaited<ReturnType<typeof runPSI>> | null = null;
+    const psiErrors: string[] = [];
+
+    if (pageSpeedEnabled) {
+      const [mobileResult, desktopResult] = await Promise.allSettled([runPSI(url, "mobile"), runPSI(url, "desktop")]);
+      if (mobileResult.status === "fulfilled") {
+        mobile = mobileResult.value;
+      } else {
+        psiErrors.push(`mobile: ${mobileResult.reason?.message ?? String(mobileResult.reason)}`);
+      }
+      if (desktopResult.status === "fulfilled") {
+        desktop = desktopResult.value;
+      } else {
+        psiErrors.push(`desktop: ${desktopResult.reason?.message ?? String(desktopResult.reason)}`);
+      }
+    } else {
+      psiErrors.push("PageSpeed non configuré: audit gratuit basé sur crawl HTML, SEO on-page, tracking et conversion.");
     }
 
-    const score_perf = Math.round((mobile.perf + desktop.perf) / 2);
-    const score_seo = Math.round(((mobile.seo + desktop.seo) / 2) * 0.65 + ((websiteInspection as any).free_scores?.seo_on_page ?? 0) * 0.35);
-    const score_ux = Math.round((mobile.a11y + desktop.a11y) / 2);
-    const score_mobile = mobile.perf;
-    const score_global = Math.round((score_perf + score_seo + score_ux + score_mobile + ((websiteInspection as any).free_scores?.conversion ?? 0)) / 5);
+    const freeScores = (websiteInspection as any).free_scores ?? {};
+    const psiSeo = averageScores([mobile?.seo, desktop?.seo]);
+    const score_perf = averageScores([mobile?.perf, desktop?.perf]);
+    const score_seo = psiSeo == null
+      ? freeScores.seo_on_page ?? null
+      : Math.round(psiSeo * 0.65 + (freeScores.seo_on_page ?? psiSeo) * 0.35);
+    const score_ux = averageScores([mobile?.a11y, desktop?.a11y]);
+    const score_mobile = mobile?.perf ?? null;
+    const score_global = averageScores([
+      score_perf,
+      score_seo,
+      score_ux,
+      score_mobile,
+      freeScores.conversion,
+      freeScores.tracking,
+    ]);
 
     const findings = {
-      mobile_top_issues: topIssues(mobile.audits),
-      desktop_top_issues: topIssues(desktop.audits),
+      mobile_top_issues: mobile ? topIssues(mobile.audits) : [],
+      desktop_top_issues: desktop ? topIssues(desktop.audits) : [],
+      pagespeed: {
+        enabled: pageSpeedEnabled,
+        mobile_available: Boolean(mobile),
+        desktop_available: Boolean(desktop),
+        errors: psiErrors,
+      },
       website_inspection: websiteInspection,
     };
 
@@ -393,55 +432,30 @@ Deno.serve(async (req) => {
       },
     };
 
-    const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          {
-            role: "system",
-            content: `Tu es un expert SEO, tracking, conversion et performance web pour une SMMA. Tu transformes des audits gratuits (PageSpeed + inspection HTML) en recommandations business actionnables et chiffrées. Tu rédiges en français, ton expert mais accessible.`,
-          },
-          {
-            role: "user",
-            content: `Site audité : ${url}
+    const aiResult = await callAI({
+      provider: "auto",
+      systemPrompt: `Tu es un expert SEO, tracking, conversion et performance web pour une SMMA. Tu transformes des audits gratuits (PageSpeed + inspection HTML) en recommandations business actionnables et chiffrées. Tu rédiges en français, ton expert mais accessible.`,
+      userPrompt: `Site audité : ${url}
 Prospect : ${prospect?.name ?? "—"} (${prospect?.sector ?? "—"}, ${prospect?.city ?? "—"})
 
 Scores Lighthouse :
-- Performance mobile : ${mobile.perf}/100 | desktop : ${desktop.perf}/100
-- SEO : mobile ${mobile.seo} | desktop ${desktop.seo}
-- Accessibilité : mobile ${mobile.a11y} | desktop ${desktop.a11y}
-- Bonnes pratiques : mobile ${mobile.best} | desktop ${desktop.best}
+- Performance mobile : ${fmtScore(mobile?.perf)} | desktop : ${fmtScore(desktop?.perf)}
+- SEO : mobile ${fmtScore(mobile?.seo)} | desktop ${fmtScore(desktop?.seo)}
+- Accessibilité : mobile ${fmtScore(mobile?.a11y)} | desktop ${fmtScore(desktop?.a11y)}
+- Bonnes pratiques : mobile ${fmtScore(mobile?.best)} | desktop ${fmtScore(desktop?.best)}
+- Statut PageSpeed : ${psiErrors.length ? psiErrors.join(" | ") : "OK"}
 
 Top problèmes mobile :
-${findings.mobile_top_issues.map((i: any, n: number) => `${n + 1}. ${i.title}`).join("\n")}
+${findings.mobile_top_issues.length ? findings.mobile_top_issues.map((i: any, n: number) => `${n + 1}. ${i.title}`).join("\n") : "PageSpeed indisponible: utilise l'inspection HTML/SEO gratuite ci-dessous."}
 
 Inspection gratuite HTML/SEO/tracking/conversion :
 ${JSON.stringify(websiteInspection, null, 2).slice(0, 6000)}
 
 Génère un audit business complet pour pitcher ce prospect. Appuie-toi aussi sur le SEO on-page, robots/sitemap, tracking pixels, formulaires, CTA et signaux local SEO. Ajoute un plan 7 jours, un plan 30 jours et une offre packagée vendable par une agence SMMA.`,
-          },
-        ],
-        tools: [tool],
-        tool_choice: { type: "function", function: { name: "audit_recommendations" } },
-      }),
+      tool,
+      toolName: "audit_recommendations",
     });
-
-    if (!aiResp.ok) {
-      if (aiResp.status === 429) return jsonResponse({ error: "Rate limit IA" }, 429);
-      if (aiResp.status === 402) return jsonResponse({ error: "Crédits IA épuisés" }, 402);
-      const t = await aiResp.text();
-      await admin.from("site_audits").update({ status: "failed" }).eq("id", row.id);
-      return jsonResponse({ error: `IA: ${t}` }, 500);
-    }
-    const aiData = await aiResp.json();
-    const tc = aiData.choices?.[0]?.message?.tool_calls?.[0];
-    if (!tc) {
-      await admin.from("site_audits").update({ status: "failed" }).eq("id", row.id);
-      return jsonResponse({ error: "No tool call" }, 500);
-    }
-    const recommendations = JSON.parse(tc.function.arguments);
+    const recommendations = aiResult.parsed;
 
     const { data: updated, error: upErr } = await admin.from("site_audits").update({
       score_global,

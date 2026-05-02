@@ -4,7 +4,6 @@
 
 | Provider | Cout | Recommande | Usage |
 | --- | --- | --- | --- |
-| Lovable AI Gateway | Free | Oui | Fallback simple et rapide |
 | Gemini | Freemium | Oui | Volume, analyse, generation rapide |
 | Groq | Free | Oui | Drafts rapides, fallback Llama |
 | Claude | Paid | Oui | Raisonnement, briefs, scripts longs |
