@@ -1,7 +1,7 @@
 // ===== GLASS CARD =====
 export function GlassCard({ children, className = '', ...props }) {
   return (
-    <div className={`glass p-5 ${className}`} {...props}>
+    <div className={`glass interactive-lift p-4 sm:p-5 ${className}`} {...props}>
       {children}
     </div>
   )
@@ -10,21 +10,29 @@ export function GlassCard({ children, className = '', ...props }) {
 // ===== STAT CARD =====
 export function StatCard({ icon, value, label, sub, color = 'cyan' }) {
   const colors = {
-    cyan: 'text-cyan-400',
-    violet: 'text-violet-400',
-    green: 'text-green-400',
-    pink: 'text-pink-400',
-    orange: 'text-orange-400',
-    blue: 'text-blue-400',
+    cyan: { text: 'text-cyan-300', bg: 'bg-cyan-500/[0.12]', rail: 'from-cyan-400 to-green-400' },
+    violet: { text: 'text-violet-300', bg: 'bg-violet-500/[0.12]', rail: 'from-violet-400 to-cyan-400' },
+    green: { text: 'text-green-300', bg: 'bg-green-500/[0.12]', rail: 'from-green-400 to-cyan-400' },
+    pink: { text: 'text-pink-300', bg: 'bg-pink-500/[0.12]', rail: 'from-pink-400 to-violet-400' },
+    orange: { text: 'text-orange-300', bg: 'bg-orange-500/[0.12]', rail: 'from-orange-400 to-green-400' },
+    blue: { text: 'text-blue-300', bg: 'bg-blue-500/[0.12]', rail: 'from-blue-400 to-cyan-400' },
   }
+  const theme = colors[color] || colors.cyan
   return (
-    <div className="glass p-4 flex flex-col gap-2">
-      <div className={`w-9 h-9 rounded-xl flex items-center justify-center bg-white/5 ${colors[color]}`}>
-        {icon}
+    <div className="glass interactive-lift p-4 min-h-[136px] flex flex-col justify-between gap-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${theme.bg} ${theme.text}`}>
+          {icon}
+        </div>
+        <div className="w-12 h-1 rounded-full bg-white/[0.08] overflow-hidden mt-2">
+          <div className={`motion-bar h-full w-2/3 rounded-full bg-gradient-to-r ${theme.rail}`} />
+        </div>
       </div>
-      <div className="text-2xl font-black tracking-tight">{value}</div>
-      <div className="text-xs text-white/50">{label}</div>
-      {sub && <div className="text-xs text-white/35">{sub}</div>}
+      <div>
+        <div className="text-2xl sm:text-3xl font-black tracking-tight leading-none">{value}</div>
+        <div className="mt-2 text-xs text-white/55 leading-tight">{label}</div>
+        {sub && <div className="mt-1 text-xs text-white/35 leading-tight">{sub}</div>}
+      </div>
     </div>
   )
 }
@@ -75,8 +83,8 @@ export function Avatar({ name = '?', size = 'sm' }) {
 
 // ===== BUTTON =====
 export function Button({ children, variant = 'primary', size = 'md', className = '', ...props }) {
-  const base = 'inline-flex items-center justify-center gap-2 font-semibold rounded-[14px] transition-all cursor-pointer'
-  const sizes = { sm: 'px-3 py-1.5 text-xs', md: 'px-4 py-2 text-sm', lg: 'px-6 py-3 text-base' }
+  const base = 'inline-flex items-center justify-center gap-2 font-semibold rounded-[14px] transition-all cursor-pointer whitespace-nowrap disabled:opacity-50 disabled:pointer-events-none'
+  const sizes = { sm: 'px-3 py-1.5 min-h-8 text-xs', md: 'px-4 py-2 min-h-10 text-sm', lg: 'px-6 py-3 min-h-12 text-base' }
   const variants = {
     primary: 'btn-grad',
     ghost: 'bg-white/5 border border-white/10 text-white/80 hover:bg-white/10 hover:text-white',
@@ -92,14 +100,14 @@ export function Button({ children, variant = 'primary', size = 'md', className =
 // ===== INPUT =====
 export function Input({ className = '', ...props }) {
   return (
-    <input className={`input-base px-3 py-2 text-sm w-full ${className}`} {...props} />
+    <input className={`input-base px-3 py-2 text-[16px] sm:text-sm w-full ${className}`} {...props} />
   )
 }
 
 // ===== SELECT =====
 export function Select({ className = '', children, ...props }) {
   return (
-    <select className={`input-base px-3 py-2 text-sm w-full appearance-none ${className}`} {...props}>
+    <select className={`input-base px-3 py-2 text-[16px] sm:text-sm w-full appearance-none ${className}`} {...props}>
       {children}
     </select>
   )
@@ -108,7 +116,7 @@ export function Select({ className = '', children, ...props }) {
 // ===== TEXTAREA =====
 export function Textarea({ className = '', ...props }) {
   return (
-    <textarea className={`input-base px-3 py-2 text-sm w-full resize-none ${className}`} {...props} />
+    <textarea className={`input-base px-3 py-2 text-[16px] sm:text-sm w-full resize-none ${className}`} {...props} />
   )
 }
 
@@ -116,10 +124,10 @@ export function Textarea({ className = '', ...props }) {
 export function Modal({ open, onClose, title, children, width = 'max-w-lg' }) {
   if (!open) return null
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <div
-        className={`glass relative w-full ${width} max-h-[90vh] overflow-y-auto z-10 shadow-2xl`}
+        className={`glass relative w-full ${width} max-h-[92dvh] overflow-y-auto z-10 shadow-2xl rounded-b-none sm:rounded-b-[var(--radius-card)]`}
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between p-5 border-b border-white/8">

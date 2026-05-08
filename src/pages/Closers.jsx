@@ -3,6 +3,7 @@ import { leads, users } from '../lib/api'
 import { GlassCard, Avatar, Button, Input, Select, Modal, StatCard, HeatBadge } from '../components/ui'
 import { Trophy, TrendingUp, DollarSign, Target, Plus, Trash2, Mail, Phone } from 'lucide-react'
 import { differenceInDays } from 'date-fns'
+import { roleLabel } from '../lib/roles'
 
 const medals = ['🥇', '🥈', '🥉']
 
@@ -10,17 +11,22 @@ export default function Closers() {
   const [allLeads, setAllLeads] = useState([])
   const [allUsers, setAllUsers] = useState([])
   const [showModal, setShowModal] = useState(false)
-  const [form, setForm] = useState({ name: '', email: '', phone: '', role: 'closer' })
+  const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', role: 'setter' })
+  const [formError, setFormError] = useState('')
+  const [creating, setCreating] = useState(false)
 
   useEffect(() => {
-    leads.getAll().then(r => setAllLeads(r.data || []))
-    users.getAll().then(r => setAllUsers(r.data || []))
+    leads.getAll().then(r => setAllLeads(Array.isArray(r.data) ? r.data : []))
+    users.getAll().then(r => setAllUsers(Array.isArray(r.data) ? r.data : []))
   }, [])
 
-  const reload = () => users.getAll().then(r => setAllUsers(r.data || []))
+  const reload = () => {
+    users.getAll().then(r => setAllUsers(Array.isArray(r.data) ? r.data : []))
+    leads.getAll().then(r => setAllLeads(Array.isArray(r.data) ? r.data : []))
+  }
 
   const closerStats = allUsers
-    .filter(u => u.role === 'closer' || u.role === 'admin')
+    .filter(u => ['setter', 'closer', 'admin'].includes(u.role))
     .map(u => {
       const myLeads = allLeads.filter(l => l.assignedCloserId === u.id)
       const myWon = myLeads.filter(l => l.stage === 'Gagné')
@@ -43,14 +49,18 @@ export default function Closers() {
 
   const handleCreate = async (e) => {
     e.preventDefault()
-    await users.create(form)
+    setCreating(true)
+    setFormError('')
+    const { error } = await users.create({ ...form, fullName: form.name })
+    setCreating(false)
+    if (error) { setFormError(error); return }
     setShowModal(false)
-    setForm({ name: '', email: '', phone: '', role: 'closer' })
+    setForm({ name: '', email: '', phone: '', password: '', role: 'setter' })
     reload()
   }
 
   const handleDelete = async (id) => {
-    if (!confirm('Supprimer ce closer ?')) return
+    if (!confirm('Supprimer ce membre ? Les leads assignés seront remis en non assignés.')) return
     await users.delete(id)
     reload()
   }
@@ -58,17 +68,17 @@ export default function Closers() {
   const f = (k, v) => setForm(p => ({ ...p, [k]: v }))
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+    <div className="page-shell max-w-6xl">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-black">Closers</h1>
+          <h1 className="text-2xl font-black">Équipe commerciale</h1>
           <p className="text-white/40 text-sm">{allUsers.length} membre{allUsers.length !== 1 ? 's' : ''} dans l'équipe</p>
         </div>
-        <Button size="sm" onClick={() => setShowModal(true)}><Plus size={14} /> Ajouter un closer</Button>
+        <Button size="sm" onClick={() => setShowModal(true)}><Plus size={14} /> Créer un accès membre</Button>
       </div>
 
       {/* Team KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <StatCard icon={<Target size={18} />} value={closerStats.reduce((s, u) => s + u.total, 0)} label="Total leads assignés" color="cyan" />
         <StatCard icon={<Trophy size={18} />} value={totalWon} label="Deals gagnés" color="green" />
         <StatCard icon={<DollarSign size={18} />} value={fmt(totalRevenue)} label="Revenus totaux" color="violet" />
@@ -79,16 +89,16 @@ export default function Closers() {
       <GlassCard className="mb-5">
         <div className="flex items-center gap-2 mb-4">
           <Trophy size={16} className="text-yellow-400" />
-          <div className="font-bold text-sm">Classement des closers</div>
+          <div className="font-bold text-sm">Classement de l’équipe</div>
         </div>
         {closerStats.length === 0 ? (
-          <div className="text-center py-8 text-white/30 text-sm">Aucun closer — ajoutez des membres</div>
+          <div className="text-center py-8 text-white/30 text-sm">Aucun membre — créez un accès setter ou closer</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="border-b border-white/8">
                 <tr>
-                  {['#', 'Closer', 'Leads', 'Gagnés', 'Perdus', 'Actifs', 'Pipeline', 'Revenus', 'Taux', 'Cycle moy.'].map(h => (
+                  {['#', 'Membre', 'Leads', 'Gagnés', 'Perdus', 'Actifs', 'Pipeline', 'Revenus', 'Taux', 'Cycle moy.'].map(h => (
                     <th key={h} className="text-left py-3 px-3 text-xs text-white/40 font-medium whitespace-nowrap">{h}</th>
                   ))}
                   <th className="py-3 px-3 w-8" />
@@ -103,7 +113,7 @@ export default function Closers() {
                         <Avatar name={u.name} size="sm" />
                         <div>
                           <div className="font-medium text-sm">{u.name}</div>
-                          <div className="text-xs text-white/35">{u.email}</div>
+                          <div className="text-xs text-white/35">{u.email} · {roleLabel(u.role)}</div>
                         </div>
                       </div>
                     </td>
@@ -143,7 +153,7 @@ export default function Closers() {
                 <Avatar name={u.name} size="md" />
                 <div>
                   <div className="font-bold">{u.name} {medals[i]}</div>
-                  <div className="text-xs text-white/40 capitalize">{u.role}</div>
+                  <div className="text-xs text-white/40">{roleLabel(u.role)}</div>
                 </div>
               </div>
               <span className={`px-2 py-0.5 rounded-full text-xs ${Number(u.rate) >= 50 ? 'bg-green-500/15 text-green-400' : 'bg-white/8 text-white/50'}`}>
@@ -187,8 +197,13 @@ export default function Closers() {
         ))}
       </div>
 
-      <Modal open={showModal} onClose={() => setShowModal(false)} title="Ajouter un closer">
+      <Modal open={showModal} onClose={() => setShowModal(false)} title="Créer un accès membre">
         <form onSubmit={handleCreate} className="flex flex-col gap-3">
+          {formError && (
+            <div className="rounded-xl border border-red-500/25 bg-red-500/10 p-3 text-sm text-red-300">
+              {formError}
+            </div>
+          )}
           <div>
             <label className="text-xs text-white/50 mb-1 block">Nom *</label>
             <Input value={form.name} onChange={e => f('name', e.target.value)} placeholder="Marc Dupont" required />
@@ -198,19 +213,26 @@ export default function Closers() {
             <Input type="email" value={form.email} onChange={e => f('email', e.target.value)} placeholder="marc@..." required />
           </div>
           <div>
+            <label className="text-xs text-white/50 mb-1 block">Mot de passe temporaire *</label>
+            <Input type="text" value={form.password} onChange={e => f('password', e.target.value)} placeholder="Revolution123!" required minLength={6} />
+            <p className="mt-1 text-xs text-white/30">Le membre pourra se connecter avec cet email et ce mot de passe.</p>
+          </div>
+          <div>
             <label className="text-xs text-white/50 mb-1 block">Téléphone</label>
             <Input value={form.phone} onChange={e => f('phone', e.target.value)} placeholder="06 ..." />
           </div>
           <div>
             <label className="text-xs text-white/50 mb-1 block">Rôle</label>
             <Select value={form.role} onChange={e => f('role', e.target.value)}>
+              <option value="setter">Setter</option>
               <option value="closer">Closer</option>
               <option value="admin">Admin</option>
             </Select>
+            <p className="mt-1 text-xs text-white/30">Setter et closer voient uniquement leurs prospects assignés.</p>
           </div>
           <div className="flex gap-2 justify-end mt-2">
             <Button variant="ghost" type="button" onClick={() => setShowModal(false)}>Annuler</Button>
-            <Button type="submit">Ajouter</Button>
+            <Button type="submit" disabled={creating}>{creating ? 'Création...' : 'Créer l’accès'}</Button>
           </div>
         </form>
       </Modal>

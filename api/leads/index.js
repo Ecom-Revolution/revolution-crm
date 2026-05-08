@@ -3,7 +3,7 @@
 // POST /api/leads        — crée un lead (N8N + CRM)
 // PATCH /api/leads?id=:id — met à jour un lead
 // DELETE /api/leads?id=:id — supprime un lead
-import { getDb, cors, checkAuth } from '../_db.js'
+import { getDb, cors, checkAuth, getRequestUser } from '../_db.js'
 
 function normalize(row) {
   return {
@@ -50,6 +50,9 @@ export default async function handler(req, res) {
   if (!checkAuth(req)) return res.status(401).json({ error: 'Clé API invalide' })
 
   const sql = getDb()
+  const actor = getRequestUser(req)
+  const isMember = actor?.role === 'setter' || actor?.role === 'closer'
+  const isAdmin = !actor || actor.role === 'admin'
 
   const { id, search, limit = 500, offset = 0 } = req.query
 
@@ -58,6 +61,9 @@ export default async function handler(req, res) {
     if (req.method === 'GET') {
       const [row] = await sql`SELECT * FROM leads WHERE id = ${id}`
       if (!row) return res.status(404).json({ error: 'Lead introuvable' })
+      if (isMember && row.assigned_closer_id !== actor.id) {
+        return res.status(403).json({ error: 'Lead non assigné à ce membre' })
+      }
       return res.status(200).json({ data: normalize(row) })
     }
 
@@ -69,6 +75,15 @@ export default async function handler(req, res) {
         address, city, zip, dirigeant, rating, reviews, siren,
         siteStatus, rdvDate, rdvNote, notes, distanceKm,
       } = req.body
+      const canChangeAssignment = isAdmin && Object.prototype.hasOwnProperty.call(req.body, 'assignedCloserId')
+
+      if (isMember) {
+        const [existing] = await sql`SELECT id, assigned_closer_id FROM leads WHERE id = ${id} LIMIT 1`
+        if (!existing) return res.status(404).json({ error: 'Lead introuvable' })
+        if (existing.assigned_closer_id !== actor.id) {
+          return res.status(403).json({ error: 'Lead non assigné à ce membre' })
+        }
+      }
 
       const [row] = await sql`
         UPDATE leads SET
@@ -82,7 +97,7 @@ export default async function handler(req, res) {
           heat_score = COALESCE(${heatScore || null}, heat_score),
           stage = COALESCE(${stage || null}, stage),
           estimated_value = COALESCE(${estimatedValue != null ? Number(estimatedValue) : null}, estimated_value),
-          assigned_closer_id = COALESCE(${assignedCloserId || null}, assigned_closer_id),
+          assigned_closer_id = CASE WHEN ${canChangeAssignment} THEN ${assignedCloserId || null} ELSE assigned_closer_id END,
           upsell_potential = COALESCE(${upsellPotential != null ? upsellPotential : null}, upsell_potential),
           loss_reason = COALESCE(${lossReason || null}, loss_reason),
           ai_score = COALESCE(${aiScore != null ? Number(aiScore) : null}, ai_score),
@@ -112,6 +127,7 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'DELETE') {
+      if (!isAdmin) return res.status(403).json({ error: 'Accès admin requis' })
       await sql`DELETE FROM leads WHERE id = ${id}`
       return res.status(200).json({ success: true })
     }
@@ -124,16 +140,29 @@ export default async function handler(req, res) {
     let rows
     if (search) {
       const q = `%${search}%`
-      rows = await sql`
-        SELECT * FROM leads
-        WHERE (name ILIKE ${q} OR company ILIKE ${q} OR email ILIKE ${q} OR phone ILIKE ${q} OR city ILIKE ${q})
-        ORDER BY created_at DESC LIMIT ${Number(limit)} OFFSET ${Number(offset)}
-      `
+      rows = isMember
+        ? await sql`
+          SELECT * FROM leads
+          WHERE assigned_closer_id = ${actor.id}
+            AND (name ILIKE ${q} OR company ILIKE ${q} OR email ILIKE ${q} OR phone ILIKE ${q} OR city ILIKE ${q})
+          ORDER BY created_at DESC LIMIT ${Number(limit)} OFFSET ${Number(offset)}
+        `
+        : await sql`
+          SELECT * FROM leads
+          WHERE (name ILIKE ${q} OR company ILIKE ${q} OR email ILIKE ${q} OR phone ILIKE ${q} OR city ILIKE ${q})
+          ORDER BY created_at DESC LIMIT ${Number(limit)} OFFSET ${Number(offset)}
+        `
     } else {
-      rows = await sql`
-        SELECT * FROM leads
-        ORDER BY created_at DESC LIMIT ${Number(limit)} OFFSET ${Number(offset)}
-      `
+      rows = isMember
+        ? await sql`
+          SELECT * FROM leads
+          WHERE assigned_closer_id = ${actor.id}
+          ORDER BY created_at DESC LIMIT ${Number(limit)} OFFSET ${Number(offset)}
+        `
+        : await sql`
+          SELECT * FROM leads
+          ORDER BY created_at DESC LIMIT ${Number(limit)} OFFSET ${Number(offset)}
+        `
     }
 
     return res.status(200).json({ data: rows.map(normalize) })
@@ -160,6 +189,7 @@ export default async function handler(req, res) {
       if (dup) return res.status(200).json({ success: false, duplicate: true, message: `Déjà existant: ${dup.name}`, leadId: dup.id })
     }
 
+    const assignedTo = isMember ? actor.id : (assignedCloserId || null)
     const [row] = await sql`
       INSERT INTO leads (
         name, company, sector, email, phone, website, source, heat_score, stage,
@@ -170,7 +200,7 @@ export default async function handler(req, res) {
         ${name?.trim()}, ${company?.trim() || null}, ${sector?.trim() || null},
         ${email?.trim() || null}, ${phone?.trim() || null}, ${website?.trim() || null},
         ${source || 'Google Maps'}, ${heatScore || 'Cold'}, ${stage || 'Prospect'},
-        ${Number(estimatedValue) || 0}, ${assignedCloserId || null},
+        ${Number(estimatedValue) || 0}, ${assignedTo},
         ${aiScore != null ? Number(aiScore) : null}, ${aiNeeds || null}, ${aiHook || null},
         ${address || null}, ${city || null}, ${zip || null}, ${dirigeant || null},
         ${rating || null}, ${reviews || 0}, ${siren || null},

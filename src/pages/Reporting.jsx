@@ -29,9 +29,9 @@ export default function Reporting() {
   const [period, setPeriod] = useState(6) // months
 
   useEffect(() => {
-    leads.getAll().then(r => setAllLeads(r.data || []))
-    activities.getAll().then(r => setAllActivities(r.data || []))
-    users.getAll().then(r => setAllUsers(r.data || []))
+    leads.getAll().then(r => setAllLeads(Array.isArray(r.data) ? r.data : []))
+    activities.getAll().then(r => setAllActivities(Array.isArray(r.data) ? r.data : []))
+    users.getAll().then(r => setAllUsers(Array.isArray(r.data) ? r.data : []))
   }, [])
 
   const fmt = (n) => n >= 1000 ? `€${(n / 1000).toFixed(0)}k` : `€${n}`
@@ -100,8 +100,8 @@ export default function Reporting() {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+    <div className="page-shell max-w-7xl">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
         <div>
           <h1 className="text-2xl font-black">Reporting</h1>
           <p className="text-white/40 text-sm">Performance globale de votre pipeline</p>

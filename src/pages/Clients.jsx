@@ -22,10 +22,10 @@ export default function Clients() {
   const [form, setForm] = useState({ name: '', company: '', email: '', phone: '', website: '', service: 'Social Media', monthlyValue: '', status: 'Actif', notes: '' })
 
   useEffect(() => {
-    clients.getAll().then(r => setAllClients(r.data || []))
+    clients.getAll().then(r => setAllClients(Array.isArray(r.data) ? r.data : []))
   }, [])
 
-  const reload = () => clients.getAll().then(r => setAllClients(r.data || []))
+  const reload = () => clients.getAll().then(r => setAllClients(Array.isArray(r.data) ? r.data : []))
 
   const filtered = allClients.filter(c => {
     const q = search.toLowerCase()
@@ -66,8 +66,8 @@ export default function Clients() {
   const f = (k, v) => setForm(p => ({ ...p, [k]: v }))
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+    <div className="page-shell max-w-6xl">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
         <div>
           <h1 className="text-2xl font-black">Clients Actifs</h1>
           <p className="text-white/40 text-sm">{activeClients.length} client{activeClients.length !== 1 ? 's' : ''} actifs • MRR: <span className="text-green-400 font-semibold">{fmt(mrr)}/mois</span></p>
@@ -76,7 +76,7 @@ export default function Clients() {
       </div>
 
       {/* KPI banner */}
-      <div className="grid grid-cols-3 gap-3 mb-5">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
         <div className="glass p-4 rounded-2xl text-center">
           <div className="text-2xl font-black text-green-400">{fmt(mrr)}</div>
           <div className="text-xs text-white/40 mt-1">MRR (revenus mensuels)</div>
@@ -157,15 +157,15 @@ export default function Clients() {
 
       <Modal open={showModal} onClose={() => { setShowModal(false); setSelected(null) }} title={selected ? 'Modifier le client' : 'Nouveau client'}>
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div><label className="text-xs text-white/50 mb-1 block">Nom *</label><Input value={form.name} onChange={e => f('name', e.target.value)} required placeholder="Sophie Martin" /></div>
             <div><label className="text-xs text-white/50 mb-1 block">Entreprise</label><Input value={form.company} onChange={e => f('company', e.target.value)} placeholder="StyleBoutique" /></div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div><label className="text-xs text-white/50 mb-1 block">Email</label><Input type="email" value={form.email} onChange={e => f('email', e.target.value)} placeholder="sophie@..." /></div>
             <div><label className="text-xs text-white/50 mb-1 block">Téléphone</label><Input value={form.phone} onChange={e => f('phone', e.target.value)} placeholder="06 ..." /></div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div><label className="text-xs text-white/50 mb-1 block">Service</label>
               <Select value={form.service} onChange={e => f('service', e.target.value)}>
                 {SERVICES.map(s => <option key={s}>{s}</option>)}
@@ -173,7 +173,7 @@ export default function Clients() {
             </div>
             <div><label className="text-xs text-white/50 mb-1 block">Valeur mensuelle (€)</label><Input type="number" value={form.monthlyValue} onChange={e => f('monthlyValue', e.target.value)} placeholder="1500" /></div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div><label className="text-xs text-white/50 mb-1 block">Statut</label>
               <Select value={form.status} onChange={e => f('status', e.target.value)}>
                 {STATUSES.map(s => <option key={s}>{s}</option>)}

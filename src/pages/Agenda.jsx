@@ -36,11 +36,11 @@ export default function Agenda() {
   })
 
   useEffect(() => {
-    agenda.getAll().then(r => setRdvs(r.data || []))
-    leads.getAll().then(r => setAllLeads(r.data || []))
+    agenda.getAll().then(r => setRdvs(Array.isArray(r.data) ? r.data : []))
+    leads.getAll().then(r => setAllLeads(Array.isArray(r.data) ? r.data : []))
   }, [])
 
-  const reload = () => agenda.getAll().then(r => setRdvs(r.data || []))
+  const reload = () => agenda.getAll().then(r => setRdvs(Array.isArray(r.data) ? r.data : []))
 
   const enriched = rdvs.map(rdv => ({
     ...rdv,
@@ -82,8 +82,8 @@ export default function Agenda() {
   }
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+    <div className="page-shell max-w-5xl">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
         <div>
           <h1 className="text-2xl font-black">Agenda RDV</h1>
           <p className="text-white/40 text-sm">{upcomingCount} rendez-vous à venir</p>
@@ -92,7 +92,7 @@ export default function Agenda() {
       </div>
 
       {/* Stats rapides */}
-      <div className="grid grid-cols-3 gap-3 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
         <GlassCard className="text-center">
           <div className="text-2xl font-black text-cyan-400">{todayRdvs.length}</div>
           <div className="text-xs text-white/40 mt-1">Aujourd'hui</div>
@@ -220,7 +220,7 @@ export default function Agenda() {
               ))}
             </select>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-white/50 mb-1 block">Date & heure *</label>
               <Input

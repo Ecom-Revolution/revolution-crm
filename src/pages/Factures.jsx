@@ -23,11 +23,11 @@ export default function Factures() {
   })
 
   useEffect(() => {
-    factures.getAll().then(r => setAllFactures(r.data || []))
-    clients.getAll().then(r => setAllClients(r.data || []))
+    factures.getAll().then(r => setAllFactures(Array.isArray(r.data) ? r.data : []))
+    clients.getAll().then(r => setAllClients(Array.isArray(r.data) ? r.data : []))
   }, [])
 
-  const reload = () => factures.getAll().then(r => setAllFactures(r.data || []))
+  const reload = () => factures.getAll().then(r => setAllFactures(Array.isArray(r.data) ? r.data : []))
 
   const filtered = allFactures.filter(f =>
     filterStatus === 'all' || f.status === filterStatus
@@ -76,8 +76,8 @@ export default function Factures() {
   const fmt = (n) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(n || 0)
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+    <div className="page-shell max-w-5xl">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
         <div>
           <h1 className="text-2xl font-black">Factures</h1>
           <p className="text-white/40 text-sm">{allFactures.length} factures au total</p>
@@ -89,7 +89,7 @@ export default function Factures() {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-3 gap-3 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
         <GlassCard className="text-center">
           <div className="text-2xl font-black text-green-400">{fmt(totalCA)}</div>
           <div className="text-xs text-white/40 mt-1">CA encaissé</div>
@@ -199,7 +199,7 @@ export default function Factures() {
               <Input value={form.clientName} onChange={e => setForm(p => ({ ...p, clientName: e.target.value }))} placeholder="Revolution Ecom SARL" />
             </div>
           )}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-white/50 mb-1 block">Montant (€) *</label>
               <Input type="number" value={form.montant} onChange={e => setForm(p => ({ ...p, montant: e.target.value }))} placeholder="1500" required />

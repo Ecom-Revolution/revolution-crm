@@ -168,6 +168,7 @@ async function migrate() {
   // ==================== INDEX pour les perfs ====================
   await sql`CREATE INDEX IF NOT EXISTS idx_leads_stage ON leads(stage)`
   await sql`CREATE INDEX IF NOT EXISTS idx_leads_sector ON leads(sector)`
+  await sql`CREATE INDEX IF NOT EXISTS idx_leads_assigned_closer ON leads(assigned_closer_id)`
   await sql`CREATE INDEX IF NOT EXISTS idx_leads_created ON leads(created_at DESC)`
   await sql`CREATE INDEX IF NOT EXISTS idx_activities_lead ON activities(lead_id)`
   await sql`CREATE INDEX IF NOT EXISTS idx_agenda_date ON agenda(date)`

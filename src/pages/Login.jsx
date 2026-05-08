@@ -20,17 +20,18 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-5 relative">
+    <div className="min-h-dvh flex items-center justify-center p-4 sm:p-5 relative app-frame">
       <div className="aurora" />
-      <div className="relative z-10 w-full max-w-[1100px] grid grid-cols-[1.2fr_0.8fr] gap-5 items-stretch">
+      <div className="relative z-10 w-full max-w-[1100px] grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr] gap-4 sm:gap-5 items-stretch">
 
         {/* Hero */}
-        <div className="glass p-8 flex flex-col justify-between">
+        <div className="dashboard-hero crm-command-hero glass p-5 sm:p-8 flex flex-col justify-between animate-fade-up">
+          <div className="hero-grid absolute inset-0 opacity-20" />
           <div>
-            <div className="flex items-center justify-between mb-8">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-8">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm"
-                  style={{ background: 'linear-gradient(135deg, #22D3EE, #8B5CF6)', color: '#0B1020' }}>
+                  style={{ background: 'linear-gradient(135deg, #22D3EE, #20D16B 52%, #8B5CF6)', color: '#0B1020' }}>
                   RE
                 </div>
                 <div>
@@ -44,12 +45,12 @@ export default function Login() {
               </div>
             </div>
 
-            <h1 className="text-5xl font-black tracking-tight leading-tight mb-4">
-              <span className="grad">Revolution Ecom</span><br />
-              <span className="text-white">Votre CRM.</span>
+            <h1 className="text-4xl sm:text-6xl font-black leading-[0.96] mb-5">
+              <span className="text-white">Mission Control</span><br />
+              <span className="grad">Revolution CRM.</span>
             </h1>
             <p className="text-white/55 text-base leading-relaxed max-w-md">
-              Une <strong className="text-white/80">agence ecom</strong> qui fait <strong className="text-white/80">scaler</strong> les marques ambitieuses. Gérez vos leads, closers et clients depuis un seul endroit.
+              Un cockpit commercial pour piloter les leads, les closers, les RDV et la croissance depuis un seul endroit.
             </p>
 
             <div className="flex flex-wrap gap-2 mt-6">
@@ -61,7 +62,7 @@ export default function Login() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3 mt-8">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-8">
             {[
               { n: '⚡ Ultra rapide', l: 'navigation + recherche' },
               { n: '💎 Pro', l: 'professionnel' },
@@ -76,7 +77,7 @@ export default function Login() {
         </div>
 
         {/* Login form */}
-        <div className="glass p-7 flex flex-col justify-center">
+        <div className="glass p-5 sm:p-7 flex flex-col justify-center animate-fade-up delay-1">
           <h2 className="text-xl font-black mb-1">Connexion</h2>
           <p className="text-white/45 text-sm mb-6">Entre tes identifiants pour accéder à ton espace.</p>
 

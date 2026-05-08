@@ -6,15 +6,24 @@ const API_KEY = 'revo_demo_key'
 
 // ─── Fetch helper ─────────────────────────────────────────────────────────────
 async function apiFetch(path, options = {}) {
+  const session = auth.getSession()
   const res = await fetch(path, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
       'X-API-Key': API_KEY,
+      ...(session?.id ? { 'X-User-Id': session.id } : {}),
+      ...(session?.role ? { 'X-User-Role': session.role } : {}),
       ...options.headers,
     },
     body: options.body ? JSON.stringify(options.body) : undefined,
   })
+
+  const contentType = res.headers.get('content-type') || ''
+  if (!contentType.includes('application/json')) {
+    return { error: 'API route absente en dev local', data: null }
+  }
+
   const json = await res.json().catch(() => ({}))
   if (!res.ok) return { error: json.error || `Erreur ${res.status}`, data: null }
   return { data: json.data ?? json, error: null }
@@ -35,7 +44,11 @@ async function tryApi(path, options = {}) {
   try {
     const result = await apiFetch(path, options)
     // Erreur 404/503 = API route absente (vite dev) → fallback mock
-    if (result.error && (result.error.includes('404') || result.error.includes('503'))) return null
+    if (result.error && (
+      result.error.includes('404') ||
+      result.error.includes('503') ||
+      result.error.includes('API route absente')
+    )) return null
     return result
   } catch {
     return null
@@ -142,6 +155,15 @@ export const leads = {
     LS.set('crm_leads', LS.get('crm_leads', []).filter(l => !ids.includes(l.id)))
     return { error: null }
   },
+
+  assignMany: async (ids, assignedCloserId) => {
+    const r = await tryApi('/api/leads/assign-many', { method: 'POST', body: { ids, assignedCloserId } })
+    if (r) return r
+    const all = LS.get('crm_leads', [])
+    const updated = all.map(l => ids.includes(l.id) ? { ...l, assignedCloserId: assignedCloserId || null } : l)
+    LS.set('crm_leads', updated)
+    return { data: updated.filter(l => ids.includes(l.id)) }
+  },
 }
 
 // ==================== ACTIVITIES ====================
@@ -189,7 +211,8 @@ export const users = {
     const r = await tryApi('/api/users', { method: 'POST', body: user })
     if (r) return r
     const all = LS.get('crm_users', MOCK_USERS)
-    const newUser = { id: `u${uid()}`, avatar: user.fullName?.[0]?.toUpperCase() || 'U', name: user.fullName, ...user }
+    const name = user.fullName || user.name || user.email
+    const newUser = { id: `u${uid()}`, avatar: name?.[0]?.toUpperCase() || 'U', name, ...user }
     LS.set('crm_users', [...all, newUser])
     return { data: newUser }
   },

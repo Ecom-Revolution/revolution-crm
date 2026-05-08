@@ -24,3 +24,19 @@ export function checkAuth(req) {
   if (auth && auth === `Bearer ${API_KEY}`) return true
   return false
 }
+
+export function getRequestUser(req) {
+  const id = req.headers['x-user-id']
+  const role = req.headers['x-user-role']
+  if (!id || !role) return null
+  return { id, role }
+}
+
+export function isAdminRequest(req) {
+  return getRequestUser(req)?.role === 'admin'
+}
+
+export function isMemberRequest(req) {
+  const role = getRequestUser(req)?.role
+  return role === 'setter' || role === 'closer'
+}

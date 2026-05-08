@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { leads, users } from '../lib/api'
+import { auth, leads, users } from '../lib/api'
 import { HeatBadge, StageBadge, Button, Input, Select, Modal, EmptyState } from '../components/ui'
-import { Search, Plus, Download, Trash2, Star, Globe, MapPin, Building2 } from 'lucide-react'
+import { Search, Plus, Download, Trash2, Star, Globe, MapPin, Building2, UserRoundCheck, Sparkles } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { fr } from 'date-fns/locale'
+import { canReceiveLeads, isAdmin, roleLabel } from '../lib/roles'
+import { buildLeadPlaybook } from '../lib/agencyOS'
 
 const STAGES = ['Prospect', 'Contacté', 'RDV Pris', 'Proposition Envoyée', 'Gagné', 'Perdu']
 const SOURCES = ['Google Maps', 'Inbound', 'Referral', 'Cold Email', 'Instagram', 'Autre']
@@ -30,6 +32,8 @@ const StarRating = ({ rating, reviews }) => {
 
 export default function Leads() {
   const navigate = useNavigate()
+  const currentUser = auth.getSession()
+  const admin = isAdmin(currentUser)
   const [allLeads, setAllLeads] = useState([])
   const [allUsers, setAllUsers] = useState([])
   const [search, setSearch] = useState('')
@@ -46,11 +50,13 @@ export default function Leads() {
   })
 
   useEffect(() => {
-    leads.getAll().then(r => setAllLeads(r.data || []))
-    users.getAll().then(r => setAllUsers(r.data || []))
+    leads.getAll().then(r => setAllLeads(Array.isArray(r.data) ? r.data : []))
+    users.getAll().then(r => setAllUsers(Array.isArray(r.data) ? r.data : []))
   }, [])
 
-  const reload = () => leads.getAll().then(r => setAllLeads(r.data || []))
+  const reload = () => leads.getAll().then(r => setAllLeads(Array.isArray(r.data) ? r.data : []))
+  const assignableUsers = allUsers.filter(canReceiveLeads)
+  const getUser = (id) => allUsers.find(u => u.id === id)
 
   const sectorsInData = [...new Set(allLeads.map(l => l.sector).filter(Boolean))].sort()
 
@@ -79,13 +85,30 @@ export default function Leads() {
   }
 
   const handleDeleteSelected = async () => {
+    if (!admin) return
     if (!confirm(`Supprimer ${selected.length} lead(s) ?`)) return
     await leads.deleteMany(selected)
     setSelected([])
     reload()
   }
 
-  const toggleSelect = (id) => setSelected(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id])
+  const handleAssign = async (ids, assignedCloserId) => {
+    if (!admin || !ids.length) return
+    await leads.assignMany(ids, assignedCloserId)
+    setSelected([])
+    await reload()
+  }
+
+  const handleAssignOne = async (id, assignedCloserId) => {
+    if (!admin) return
+    await leads.update(id, { assignedCloserId })
+    await reload()
+  }
+
+  const toggleSelect = (id) => {
+    if (!admin) return
+    setSelected(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id])
+  }
 
   const exportCSV = () => {
     const rows = [['Nom', 'Entreprise', 'Secteur', 'Email', 'Téléphone', 'Ville', 'Site', 'Note Google', 'Nb avis', 'SIREN', 'Source', 'Statut', 'Valeur €', 'Score IA', 'Hook IA']]
@@ -104,25 +127,36 @@ export default function Leads() {
   const f = (k, v) => setForm(p => ({ ...p, [k]: v }))
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-5">
+    <div className="page-shell">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-5 animate-fade-up">
         <div>
           <h1 className="text-2xl font-black">Leads</h1>
           <p className="text-white/40 text-sm">{filtered.length} / {allLeads.length} leads</p>
         </div>
-        <div className="flex items-center gap-2">
-          {selected.length > 0 && (
-            <Button variant="danger" size="sm" onClick={handleDeleteSelected}>
-              <Trash2 size={14} /> Supprimer ({selected.length})
-            </Button>
+        <div className="no-scrollbar flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:overflow-visible sm:pb-0">
+          {admin && selected.length > 0 && (
+            <>
+              <select
+                defaultValue=""
+                onChange={e => e.target.value !== '' && handleAssign(selected, e.target.value === '__clear' ? '' : e.target.value)}
+                className="min-h-8 rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-3 py-1.5 text-xs font-semibold text-cyan-100 outline-none"
+              >
+                <option value="">Attribuer {selected.length} lead(s)</option>
+                <option value="__clear">Retirer assignation</option>
+                {assignableUsers.map(u => <option key={u.id} value={u.id}>{u.name} · {roleLabel(u.role)}</option>)}
+              </select>
+              <Button variant="danger" size="sm" onClick={handleDeleteSelected}>
+                <Trash2 size={14} /> Supprimer ({selected.length})
+              </Button>
+            </>
           )}
-          <Button variant="ghost" size="sm" onClick={exportCSV}><Download size={14} /> CSV</Button>
-          <Button size="sm" onClick={() => setShowModal(true)}><Plus size={14} /> Nouveau Lead</Button>
+          {admin && <Button variant="ghost" size="sm" onClick={exportCSV}><Download size={14} /> CSV</Button>}
+          {admin && <Button size="sm" onClick={() => setShowModal(true)}><Plus size={14} /> Nouveau Lead</Button>}
         </div>
       </div>
 
       {/* Filtres */}
-      <div className="glass p-3 mb-4 flex flex-wrap gap-2 items-center">
+      <div className="glass p-3 mb-4 flex flex-wrap gap-2 items-center animate-fade-up delay-1">
         <div className="flex items-center gap-2 bg-black/20 border border-white/8 rounded-xl px-3 py-2 flex-1 min-w-[180px]">
           <Search size={15} className="text-white/30 shrink-0" />
           <input
@@ -136,7 +170,7 @@ export default function Leads() {
         <select
           value={filterStage}
           onChange={e => setFilterStage(e.target.value)}
-          className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none"
+          className="min-h-10 flex-1 sm:flex-none bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none"
         >
           <option value="all">Tous statuts</option>
           {STAGES.map(s => <option key={s} value={s}>{s}</option>)}
@@ -146,7 +180,7 @@ export default function Leads() {
           <select
             value={filterSector}
             onChange={e => setFilterSector(e.target.value)}
-            className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none"
+            className="min-h-10 flex-1 sm:flex-none bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none"
           >
             <option value="all">Tous secteurs</option>
             {sectorsInData.map(s => <option key={s} value={s}>{s}</option>)}
@@ -156,7 +190,7 @@ export default function Leads() {
         <select
           value={filterSite}
           onChange={e => setFilterSite(e.target.value)}
-          className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none"
+          className="min-h-10 flex-1 sm:flex-none bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none"
         >
           <option value="all">Tous sites</option>
           <option value="none">Sans site</option>
@@ -166,21 +200,84 @@ export default function Leads() {
       </div>
 
       {/* Table */}
-      <div className="glass overflow-hidden">
+      <div className="glass overflow-hidden animate-fade-up delay-2">
         {filtered.length === 0
-          ? <EmptyState icon="🎯" title="Aucun lead trouvé" description="Modifiez vos filtres ou créez un nouveau lead" />
+          ? <EmptyState icon={<Search size={32} />} title="Aucun lead trouvé" description={admin ? 'Modifiez vos filtres ou créez un nouveau lead' : 'Aucun lead ne vous est encore assigné'} />
           : (
-            <table className="w-full text-sm">
+            <>
+            <div className="md:hidden flex flex-col gap-3 p-3">
+              {filtered.map(l => {
+                const siteInfo = l.siteStatus ? SITE_STATUS_MAP[l.siteStatus] : null
+                const assigned = getUser(l.assignedCloserId)
+                const playbook = buildLeadPlaybook(l)
+                return (
+                  <div key={l.id} className={`rounded-2xl border p-3 transition-all ${selected.includes(l.id) ? 'border-cyan-400/35 bg-cyan-500/8' : 'border-white/8 bg-black/18'}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <button className="min-w-0 flex-1 text-left" onClick={() => navigate(`/leads/${l.id}`)}>
+                        <div className="truncate text-base font-black">{l.company || l.name}</div>
+                        <div className="mt-1 truncate text-sm text-white/50">{l.name}</div>
+                        <StarRating rating={l.rating} reviews={l.reviews} />
+                      </button>
+                      {admin && <input type="checkbox" checked={selected.includes(l.id)} readOnly onClick={e => { e.stopPropagation(); toggleSelect(l.id) }} className="mt-1 accent-cyan-400 cursor-pointer" />}
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <StageBadge stage={l.stage} />
+                      <HeatBadge score={l.heatScore} />
+                      <span className="inline-flex items-center gap-1 rounded-full bg-violet-500/10 px-2 py-0.5 text-xs text-violet-200">
+                        <Sparkles size={11} />{playbook.service.name}
+                      </span>
+                      {l.city && <span className="inline-flex items-center gap-1 rounded-full bg-white/6 px-2 py-0.5 text-xs text-white/55"><MapPin size={11} />{l.city}</span>}
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-xl border border-white/8 bg-black/16 p-2">
+                        <div className="text-white/35">Contact</div>
+                        <div className="mt-1 truncate font-semibold text-white/70">{l.phone || l.email || '—'}</div>
+                      </div>
+                      <div className="rounded-xl border border-white/8 bg-black/16 p-2">
+                        <div className="text-white/35">Valeur</div>
+                        <div className="mt-1 font-black text-green-300">{l.estimatedValue ? `€${l.estimatedValue.toLocaleString()}` : '—'}</div>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex items-center justify-between gap-3">
+                      {siteInfo
+                        ? <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${siteInfo.color}`}>{siteInfo.label}</span>
+                        : l.website
+                          ? <a href={l.website.startsWith('http') ? l.website : `https://${l.website}`} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="flex items-center gap-1 text-xs text-cyan-300/80"><Globe size={11} /> Voir site</a>
+                          : <span className="text-white/25 text-xs">Sans site</span>
+                      }
+                      <span className="text-xs text-white/30">{l.createdAt ? formatDistanceToNow(new Date(l.createdAt), { locale: fr, addSuffix: true }) : ''}</span>
+                    </div>
+                    <div className="mt-3 rounded-xl border border-white/8 bg-black/16 p-2">
+                      <div className="mb-1 flex items-center gap-1.5 text-xs text-white/35">
+                        <UserRoundCheck size={12} /> Assigné
+                      </div>
+                      {admin ? (
+                        <Select value={l.assignedCloserId || ''} onChange={e => handleAssignOne(l.id, e.target.value)}>
+                          <option value="">Non assigné</option>
+                          {assignableUsers.map(u => <option key={u.id} value={u.id}>{u.name} · {roleLabel(u.role)}</option>)}
+                        </Select>
+                      ) : (
+                        <div className="text-sm font-semibold text-white/70">{assigned?.name || currentUser?.name || 'Vous'}</div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <table className="hidden md:table w-full text-sm">
               <thead>
                 <tr className="border-b border-white/7">
-                  <th className="w-8 py-3 px-3">
+                  {admin && <th className="w-8 py-3 px-3">
                     <input
                       type="checkbox"
                       checked={selected.length === filtered.length && filtered.length > 0}
                       onChange={e => setSelected(e.target.checked ? filtered.map(l => l.id) : [])}
                     />
-                  </th>
-                  {['Entreprise', 'Contact', 'Localisation', 'Site web', 'Statut', 'Score IA', ''].map(h => (
+                  </th>}
+                  {['Entreprise', 'Contact', 'Localisation', 'Site web', 'Offre', 'Assigné', 'Statut', 'Score IA', ''].map(h => (
                     <th key={h} className="text-left py-3 px-3 text-xs text-white/40 font-medium">{h}</th>
                   ))}
                 </tr>
@@ -188,15 +285,17 @@ export default function Leads() {
               <tbody>
                 {filtered.map(l => {
                   const siteInfo = l.siteStatus ? SITE_STATUS_MAP[l.siteStatus] : null
+                  const assigned = getUser(l.assignedCloserId)
+                  const playbook = buildLeadPlaybook(l)
                   return (
                     <tr
                       key={l.id}
                       className="border-b border-white/5 hover:bg-white/3 transition-colors cursor-pointer"
                       onClick={() => navigate(`/leads/${l.id}`)}
                     >
-                      <td className="py-3 px-3" onClick={e => { e.stopPropagation(); toggleSelect(l.id) }}>
+                      {admin && <td className="py-3 px-3" onClick={e => { e.stopPropagation(); toggleSelect(l.id) }}>
                         <input type="checkbox" checked={selected.includes(l.id)} readOnly />
-                      </td>
+                      </td>}
 
                       <td className="py-3 px-3">
                         <div className="font-semibold">{l.company || l.name}</div>
@@ -236,6 +335,30 @@ export default function Leads() {
                       </td>
 
                       <td className="py-3 px-3">
+                        <div className="max-w-[160px]">
+                          <div className="truncate text-xs font-semibold text-violet-200">{playbook.service.name}</div>
+                          <div className="text-[11px] text-white/35">Score {playbook.score}/100</div>
+                        </div>
+                      </td>
+
+                      <td className="py-3 px-3" onClick={e => e.stopPropagation()}>
+                        {admin ? (
+                          <select
+                            value={l.assignedCloserId || ''}
+                            onChange={e => handleAssignOne(l.id, e.target.value)}
+                            className="min-h-8 max-w-[180px] rounded-xl border border-white/10 bg-black/24 px-2 py-1 text-xs text-white outline-none"
+                          >
+                            <option value="">Non assigné</option>
+                            {assignableUsers.map(u => <option key={u.id} value={u.id}>{u.name} · {roleLabel(u.role)}</option>)}
+                          </select>
+                        ) : assigned ? (
+                          <span className="inline-flex items-center gap-1.5 text-xs text-white/60">
+                            <UserRoundCheck size={12} />{assigned.name}
+                          </span>
+                        ) : <span className="text-white/20 text-xs">—</span>}
+                      </td>
+
+                      <td className="py-3 px-3">
                         <StageBadge stage={l.stage} />
                         <div className="mt-1"><HeatBadge score={l.heatScore} /></div>
                       </td>
@@ -265,6 +388,7 @@ export default function Leads() {
                 })}
               </tbody>
             </table>
+            </>
           )
         }
       </div>
@@ -272,20 +396,20 @@ export default function Leads() {
       {/* Modal nouveau lead */}
       <Modal open={showModal} onClose={() => setShowModal(false)} title="Nouveau Lead">
         <form onSubmit={handleCreate} className="flex flex-col gap-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div><label className="text-xs text-white/50 mb-1 block">Nom contact *</label><Input value={form.name} onChange={e => f('name', e.target.value)} placeholder="Marie Dupont" required /></div>
             <div><label className="text-xs text-white/50 mb-1 block">Entreprise</label><Input value={form.company} onChange={e => f('company', e.target.value)} placeholder="Garage Dupont" /></div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div><label className="text-xs text-white/50 mb-1 block">Email</label><Input type="email" value={form.email} onChange={e => f('email', e.target.value)} placeholder="marie@..." /></div>
             <div><label className="text-xs text-white/50 mb-1 block">Téléphone</label><Input value={form.phone} onChange={e => f('phone', e.target.value)} placeholder="06 ..." /></div>
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div><label className="text-xs text-white/50 mb-1 block">Ville</label><Input value={form.city} onChange={e => f('city', e.target.value)} placeholder="Lyon" /></div>
             <div><label className="text-xs text-white/50 mb-1 block">Secteur</label><Input value={form.sector} onChange={e => f('sector', e.target.value)} placeholder="garage" /></div>
             <div><label className="text-xs text-white/50 mb-1 block">SIREN</label><Input value={form.siren} onChange={e => f('siren', e.target.value)} placeholder="123456789" /></div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div><label className="text-xs text-white/50 mb-1 block">Source</label>
               <Select value={form.source} onChange={e => f('source', e.target.value)}>
                 {SOURCES.map(s => <option key={s}>{s}</option>)}
@@ -295,6 +419,15 @@ export default function Leads() {
               <Input type="number" value={form.estimatedValue} onChange={e => f('estimatedValue', e.target.value)} placeholder="5000" />
             </div>
           </div>
+          {admin && (
+            <div>
+              <label className="text-xs text-white/50 mb-1 block">Assigner à un membre</label>
+              <Select value={form.assignedCloserId} onChange={e => f('assignedCloserId', e.target.value)}>
+                <option value="">Non assigné</option>
+                {assignableUsers.map(u => <option key={u.id} value={u.id}>{u.name} · {roleLabel(u.role)}</option>)}
+              </Select>
+            </div>
+          )}
           <div className="flex gap-3 justify-end mt-2">
             <Button variant="ghost" type="button" onClick={() => setShowModal(false)}>Annuler</Button>
             <Button type="submit">Créer</Button>

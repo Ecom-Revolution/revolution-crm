@@ -78,7 +78,7 @@ export default function Settings() {
   }
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
+    <div className="page-shell max-w-3xl">
       <div className="mb-6">
         <h1 className="text-2xl font-black">Paramètres</h1>
         <p className="text-white/40 text-sm">Configuration du CRM</p>

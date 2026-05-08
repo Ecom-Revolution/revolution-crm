@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { leads, activities, users, auth } from '../lib/api'
 import { HeatBadge, StageBadge, Avatar, Button, Input, Select, Textarea, GlassCard, Modal } from '../components/ui'
-import { ArrowLeft, Phone, Mail, Calendar, FileText, Plus, Trash2, ExternalLink, TrendingUp } from 'lucide-react'
+import { ArrowLeft, Phone, Mail, Calendar, FileText, Plus, Trash2, ExternalLink, TrendingUp, Sparkles, CheckCircle2 } from 'lucide-react'
 import { formatDistanceToNow, format } from 'date-fns'
 import { fr } from 'date-fns/locale'
+import { canReceiveLeads, isAdmin, roleLabel } from '../lib/roles'
+import { buildLeadPlaybook } from '../lib/agencyOS'
 
 const STAGES = ['Prospect', 'Contacté', 'RDV Pris', 'Proposition Envoyée', 'Gagné', 'Perdu']
 
@@ -28,6 +30,7 @@ export default function LeadDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
   const currentUser = auth.getSession()
+  const admin = isAdmin(currentUser)
   const [lead, setLead] = useState(null)
   const [leadActivities, setLeadActivities] = useState([])
   const [allUsers, setAllUsers] = useState([])
@@ -73,17 +76,19 @@ export default function LeadDetail() {
 
   const getActivityStyle = (type) => ACTIVITY_TYPES.find(t => t.value === type) || ACTIVITY_TYPES[3]
   const getUser = (uid) => allUsers.find(u => u.id === uid)
+  const assignableUsers = allUsers.filter(canReceiveLeads)
   const f = (k, v) => setForm(p => ({ ...p, [k]: v }))
 
   if (loading) return <div className="flex items-center justify-center h-full"><div className="w-8 h-8 border-2 border-white/20 border-t-cyan-400 rounded-full animate-spin" /></div>
-  if (!lead) return <div className="p-6 text-white/50">Lead introuvable.</div>
+  if (!lead) return <div className="page-shell text-white/50">Lead introuvable.</div>
 
-  const closer = getUser(lead.assignedCloserId)
+  const assignedMember = getUser(lead.assignedCloserId)
+  const playbook = buildLeadPlaybook(lead)
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="page-shell max-w-6xl">
       {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center mb-6">
         <button onClick={() => navigate(-1)} className="text-white/40 hover:text-white transition-colors p-2 rounded-xl hover:bg-white/5">
           <ArrowLeft size={18} />
         </button>
@@ -91,7 +96,7 @@ export default function LeadDetail() {
           <h1 className="text-2xl font-black">{lead.name}</h1>
           <p className="text-white/40 text-sm">{lead.company} {lead.sector && `• ${lead.sector}`}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <HeatBadge score={lead.heatScore} />
           <StageBadge stage={lead.stage} />
           {editing
@@ -143,7 +148,7 @@ export default function LeadDetail() {
         <div className="lg:col-span-2 flex flex-col gap-4">
           <GlassCard>
             <div className="font-bold text-sm mb-4">Informations</div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {[
                 { label: 'Nom', key: 'name' },
                 { label: 'Entreprise', key: 'company' },
@@ -162,7 +167,7 @@ export default function LeadDetail() {
               ))}
             </div>
 
-            <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t border-white/8">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4 pt-4 border-t border-white/8">
               <div>
                 <div className="text-xs text-white/40 mb-1">Valeur estimée</div>
                 {editing
@@ -194,7 +199,7 @@ export default function LeadDetail() {
 
           <GlassCard>
             <div className="font-bold text-sm mb-4">Statut pipeline</div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <div className="text-xs text-white/40 mb-1">Étape</div>
                 {editing
@@ -214,16 +219,17 @@ export default function LeadDetail() {
                 }
               </div>
               <div>
-                <div className="text-xs text-white/40 mb-1">Closer assigné</div>
-                {editing
+                <div className="text-xs text-white/40 mb-1">Membre assigné</div>
+                {editing && admin
                   ? <Select value={form.assignedCloserId || ''} onChange={e => f('assignedCloserId', e.target.value)}>
                       <option value="">Non assigné</option>
-                      {allUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                      {assignableUsers.map(u => <option key={u.id} value={u.id}>{u.name} · {roleLabel(u.role)}</option>)}
                     </Select>
-                  : closer ? (
+                  : assignedMember ? (
                     <div className="flex items-center gap-2">
-                      <Avatar name={closer.name} size="xs" />
-                      <span className="text-sm">{closer.name}</span>
+                      <Avatar name={assignedMember.name} size="xs" />
+                      <span className="text-sm">{assignedMember.name}</span>
+                      <span className="rounded-full bg-white/7 px-2 py-0.5 text-[11px] text-white/42">{roleLabel(assignedMember.role)}</span>
                     </div>
                   ) : <span className="text-white/30 text-sm">Non assigné</span>
                 }
@@ -240,6 +246,42 @@ export default function LeadDetail() {
                   }
                 </div>
               )}
+            </div>
+          </GlassCard>
+
+          <GlassCard className="border border-violet-500/20 bg-violet-500/5">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Sparkles size={16} className="text-violet-300" />
+                <div>
+                  <div className="font-bold text-sm">Agency OS</div>
+                  <div className="text-xs text-white/38">Angle commercial recommandé</div>
+                </div>
+              </div>
+              <span className="rounded-full border border-violet-400/25 bg-violet-500/12 px-3 py-1 text-xs font-bold text-violet-200">
+                {playbook.score}/100
+              </span>
+            </div>
+            <div className="rounded-2xl border border-white/8 bg-black/18 p-3">
+              <div className="text-xs uppercase tracking-[0.14em] text-white/35">{playbook.service.category}</div>
+              <div className="mt-1 text-base font-black text-white">{playbook.service.name}</div>
+              <p className="mt-2 text-sm leading-relaxed text-white/60">{playbook.opener}</p>
+            </div>
+            {playbook.signals.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {playbook.signals.map(signal => (
+                  <span key={signal} className="inline-flex items-center gap-1 rounded-full border border-white/9 bg-white/6 px-2 py-1 text-xs text-white/55">
+                    <CheckCircle2 size={12} className="text-green-300" />{signal}
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+              {playbook.nextActions.map(action => (
+                <div key={action} className="rounded-xl border border-white/8 bg-black/16 p-3 text-xs leading-relaxed text-white/58">
+                  {action}
+                </div>
+              ))}
             </div>
           </GlassCard>
 
@@ -406,13 +448,13 @@ export default function LeadDetail() {
             </div>
           </GlassCard>
 
-          <Button variant="danger" size="sm" className="w-full" onClick={async () => {
+          {admin && <Button variant="danger" size="sm" className="w-full" onClick={async () => {
             if (!confirm('Supprimer ce lead ?')) return
             await leads.delete(id)
             navigate('/leads')
           }}>
             <Trash2 size={14} /> Supprimer ce lead
-          </Button>
+          </Button>}
         </div>
       </div>
 
@@ -421,7 +463,7 @@ export default function LeadDetail() {
         <form onSubmit={handleAddActivity} className="flex flex-col gap-3">
           <div>
             <label className="text-xs text-white/50 mb-1.5 block">Type</label>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {ACTIVITY_TYPES.map(t => (
                 <button key={t.value} type="button"
                   onClick={() => setActForm(p => ({ ...p, type: t.value }))}

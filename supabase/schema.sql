@@ -14,7 +14,7 @@ create table public.profiles (
   name text not null,
   email text not null,
   phone text,
-  role text not null default 'closer' check (role in ('admin', 'closer')),
+  role text not null default 'closer' check (role in ('admin', 'setter', 'closer')),
   avatar text,
   created_at timestamptz default now()
 );
@@ -73,14 +73,20 @@ create table public.leads (
 
 alter table public.leads enable row level security;
 
-create policy "Leads are viewable by authenticated users"
-  on public.leads for select using (auth.role() = 'authenticated');
+create policy "Leads are viewable by admins and assigned members"
+  on public.leads for select using (
+    exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
+    or assigned_closer_id = auth.uid()
+  );
 
 create policy "Authenticated users can insert leads"
   on public.leads for insert with check (auth.role() = 'authenticated');
 
-create policy "Authenticated users can update leads"
-  on public.leads for update using (auth.role() = 'authenticated');
+create policy "Admins and assigned members can update leads"
+  on public.leads for update using (
+    exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
+    or assigned_closer_id = auth.uid()
+  );
 
 create policy "Admins can delete leads"
   on public.leads for delete using (

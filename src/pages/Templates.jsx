@@ -22,10 +22,10 @@ export default function Templates() {
   const [form, setForm] = useState({ name: '', type: 'Email', subject: '', body: '', tags: '' })
 
   useEffect(() => {
-    templates.getAll().then(r => setAllTemplates(r.data || []))
+    templates.getAll().then(r => setAllTemplates(Array.isArray(r.data) ? r.data : []))
   }, [])
 
-  const reload = () => templates.getAll().then(r => setAllTemplates(r.data || []))
+  const reload = () => templates.getAll().then(r => setAllTemplates(Array.isArray(r.data) ? r.data : []))
 
   const filtered = allTemplates.filter(t => {
     const q = search.toLowerCase()
@@ -69,8 +69,8 @@ export default function Templates() {
   const f = (k, v) => setForm(p => ({ ...p, [k]: v }))
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+    <div className="page-shell max-w-5xl">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
         <div>
           <h1 className="text-2xl font-black">Templates</h1>
           <p className="text-white/40 text-sm">{allTemplates.length} template{allTemplates.length !== 1 ? 's' : ''} de messages</p>
@@ -137,7 +137,7 @@ export default function Templates() {
 
       <Modal open={showModal} onClose={() => { setShowModal(false); setSelected(null) }} title={selected ? 'Modifier le template' : 'Nouveau template'}>
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div><label className="text-xs text-white/50 mb-1 block">Nom *</label><Input value={form.name} onChange={e => f('name', e.target.value)} required placeholder="Relance J+3" /></div>
             <div><label className="text-xs text-white/50 mb-1 block">Type</label>
               <Select value={form.type} onChange={e => f('type', e.target.value)}>

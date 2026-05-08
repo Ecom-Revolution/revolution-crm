@@ -1,7 +1,7 @@
 // GET /api/leads/[id]
 // PATCH /api/leads/[id]
 // DELETE /api/leads/[id]
-import { getDb, cors, checkAuth } from '../_db.js'
+import { getDb, cors, checkAuth, getRequestUser } from '../_db.js'
 
 function normalize(row) {
   return {
@@ -49,10 +49,16 @@ export default async function handler(req, res) {
 
   const { id } = req.query
   const sql = getDb()
+  const actor = getRequestUser(req)
+  const isMember = actor?.role === 'setter' || actor?.role === 'closer'
+  const isAdmin = !actor || actor.role === 'admin'
 
   if (req.method === 'GET') {
     const [row] = await sql`SELECT * FROM leads WHERE id = ${id}`
     if (!row) return res.status(404).json({ error: 'Lead introuvable' })
+    if (isMember && row.assigned_closer_id !== actor.id) {
+      return res.status(403).json({ error: 'Lead non assigné à ce membre' })
+    }
     return res.status(200).json({ data: normalize(row) })
   }
 
@@ -64,8 +70,15 @@ export default async function handler(req, res) {
       address, city, zip, dirigeant, rating, reviews, siren,
       siteStatus, rdvDate, rdvNote, notes, distanceKm,
     } = req.body
+    const canChangeAssignment = isAdmin && Object.prototype.hasOwnProperty.call(req.body, 'assignedCloserId')
 
-    const stageUpdated = stage ? { stage_updated_at: new Date().toISOString() } : {}
+    if (isMember) {
+      const [existing] = await sql`SELECT id, assigned_closer_id FROM leads WHERE id = ${id} LIMIT 1`
+      if (!existing) return res.status(404).json({ error: 'Lead introuvable' })
+      if (existing.assigned_closer_id !== actor.id) {
+        return res.status(403).json({ error: 'Lead non assigné à ce membre' })
+      }
+    }
 
     const [row] = await sql`
       UPDATE leads SET
@@ -79,7 +92,7 @@ export default async function handler(req, res) {
         heat_score = COALESCE(${heatScore || null}, heat_score),
         stage = COALESCE(${stage || null}, stage),
         estimated_value = COALESCE(${estimatedValue != null ? Number(estimatedValue) : null}, estimated_value),
-        assigned_closer_id = COALESCE(${assignedCloserId || null}, assigned_closer_id),
+        assigned_closer_id = CASE WHEN ${canChangeAssignment} THEN ${assignedCloserId || null} ELSE assigned_closer_id END,
         upsell_potential = COALESCE(${upsellPotential != null ? upsellPotential : null}, upsell_potential),
         loss_reason = COALESCE(${lossReason || null}, loss_reason),
         ai_score = COALESCE(${aiScore != null ? Number(aiScore) : null}, ai_score),
@@ -109,6 +122,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'DELETE') {
+    if (!isAdmin) return res.status(403).json({ error: 'Accès admin requis' })
     await sql`DELETE FROM leads WHERE id = ${id}`
     return res.status(200).json({ success: true })
   }
