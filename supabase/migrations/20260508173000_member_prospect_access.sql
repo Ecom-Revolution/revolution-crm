@@ -35,6 +35,80 @@ begin
 end;
 $$;
 
+do $$
+declare
+  table_name text;
+begin
+  foreach table_name in array array[
+    'activity_log',
+    'ads_reports',
+    'ai_activity_logs',
+    'ai_messages',
+    'appointments',
+    'campaign_alerts',
+    'campaigns',
+    'clients',
+    'enrichment_cache',
+    'funnel_events',
+    'integration_settings',
+    'invoices',
+    'scraping_jobs',
+    'scraping_results',
+    'site_audits',
+    'web_search_cache'
+  ]
+  loop
+    execute 'drop policy if exists "Authenticated users can manage rows" on public.' || quote_ident(table_name);
+    execute 'drop policy if exists "Admins can manage rows" on public.' || quote_ident(table_name);
+    execute format(
+      'create policy "Admins can manage rows" on public.%I for all to authenticated using (public.has_role(auth.uid(), ''admin'')) with check (public.has_role(auth.uid(), ''admin''))',
+      table_name
+    );
+  end loop;
+end $$;
+
+drop policy if exists "Authenticated users can manage rows" on public.profiles;
+drop policy if exists "Admins can manage profiles" on public.profiles;
+drop policy if exists "Users can read own profile" on public.profiles;
+drop policy if exists "Users can update own profile" on public.profiles;
+
+create policy "Admins can manage profiles"
+  on public.profiles
+  for all
+  to authenticated
+  using (public.has_role(auth.uid(), 'admin'))
+  with check (public.has_role(auth.uid(), 'admin'));
+
+create policy "Users can read own profile"
+  on public.profiles
+  for select
+  to authenticated
+  using (id = auth.uid());
+
+create policy "Users can update own profile"
+  on public.profiles
+  for update
+  to authenticated
+  using (id = auth.uid())
+  with check (id = auth.uid());
+
+drop policy if exists "Authenticated users can manage rows" on public.user_roles;
+drop policy if exists "Admins can manage user roles" on public.user_roles;
+drop policy if exists "Users can read own role" on public.user_roles;
+
+create policy "Admins can manage user roles"
+  on public.user_roles
+  for all
+  to authenticated
+  using (public.has_role(auth.uid(), 'admin'))
+  with check (public.has_role(auth.uid(), 'admin'));
+
+create policy "Users can read own role"
+  on public.user_roles
+  for select
+  to authenticated
+  using (user_id = auth.uid());
+
 drop policy if exists "Authenticated users can manage rows" on public.prospects;
 drop policy if exists "Admins can manage prospects" on public.prospects;
 drop policy if exists "Assigned members can read prospects" on public.prospects;
