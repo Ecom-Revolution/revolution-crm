@@ -18,6 +18,9 @@ import { KanbanBoard, KanbanStatus } from "@/components/prospects/KanbanBoard";
 import { exportToCSV } from "@/lib/export";
 import { logFunnelEvent } from "@/lib/funnelEvents";
 import { functionErrorMessage } from "@/lib/functionErrors";
+import { useAuth } from "@/hooks/useAuth";
+import { useCurrentRole } from "@/hooks/useCurrentRole";
+import { canReceiveProspects, isAdminRole, roleLabel } from "@/lib/access";
 
 type Status = "a_contacter" | "contacte" | "rdv_pris" | "rdv_effectue" | "proposition" | "negociation" | "client" | "perdu" | "injoignable";
 type Source = "google_maps" | "linkedin" | "instagram" | "tiktok" | "pages_jaunes" | "societe_com" | "manual" | "referral" | "website";
@@ -41,9 +44,19 @@ const SOURCE_LABELS: Record<Source, string> = {
 
 const PAGE_SIZE = 200;
 
+interface TeamMember {
+  id: string;
+  full_name: string | null;
+  role: string;
+}
+
 export default function Prospects() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const { role, loading: roleLoading } = useCurrentRole();
+  const admin = isAdminRole(role);
   const [prospects, setProspects] = useState<any[]>([]);
+  const [members, setMembers] = useState<TeamMember[]>([]);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [sourceFilter, setSourceFilter] = useState<string>("all");
@@ -52,8 +65,10 @@ export default function Prospects() {
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
+  const [assigning, setAssigning] = useState(false);
 
   const toggleSelect = (id: string) => {
+    if (!admin) return;
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
@@ -62,7 +77,7 @@ export default function Prospects() {
   };
 
   const bulkAnalyze = async () => {
-    if (selectedIds.size === 0) return;
+    if (!admin || selectedIds.size === 0) return;
     setBulkLoading(true);
     const { data, error } = await supabase.functions.invoke("bulk-analyze-prospects", {
       body: { prospect_ids: Array.from(selectedIds) },
@@ -74,7 +89,22 @@ export default function Prospects() {
     fetch();
   };
 
+  const fetchMembers = async () => {
+    if (!admin) { setMembers([]); return; }
+    const [{ data: roles }, { data: profiles }] = await Promise.all([
+      supabase.from("user_roles").select("user_id, role").in("role", ["admin", "setter", "closer"]),
+      supabase.from("profiles").select("id, full_name"),
+    ]);
+    const list = (roles ?? []).map((item) => ({
+      id: item.user_id,
+      role: item.role,
+      full_name: profiles?.find((profile) => profile.id === item.user_id)?.full_name ?? null,
+    }));
+    setMembers(list);
+  };
+
   const fetch = async () => {
+    if (roleLoading || !user) return;
     setLoading(true);
     let query = supabase
       .from("prospects")
@@ -82,6 +112,7 @@ export default function Prospects() {
       .order("created_at", { ascending: false })
       .limit(PAGE_SIZE);
 
+    if (!admin) query = query.eq("assigned_to", user.id);
     if (statusFilter !== "all") query = query.eq("status", statusFilter as Status);
     if (sourceFilter !== "all") query = query.eq("source", sourceFilter as Source);
     if (search.trim()) {
@@ -96,7 +127,8 @@ export default function Prospects() {
     setLoading(false);
   };
 
-  useEffect(() => { fetch(); }, [search, statusFilter, sourceFilter]);
+  useEffect(() => { fetch(); }, [search, statusFilter, sourceFilter, role, roleLoading, user?.id]);
+  useEffect(() => { fetchMembers(); }, [admin]);
 
   const filtered = prospects;
 
@@ -124,10 +156,31 @@ export default function Prospects() {
     toast.success(`Déplacé vers "${STATUS[newStatus].label}"`);
   };
 
+  const assignProspects = async (ids: string[], assignedTo: string | null) => {
+    if (!admin || ids.length === 0) return;
+    setAssigning(true);
+    const { error } = await supabase.from("prospects").update({ assigned_to: assignedTo }).in("id", ids);
+    setAssigning(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success(assignedTo ? "Prospects assignes" : "Assignation retiree");
+    setSelectedIds(new Set());
+    fetch();
+  };
+
+  const assignOne = async (id: string, assignedTo: string | null) => {
+    if (!admin) return;
+    const { error } = await supabase.from("prospects").update({ assigned_to: assignedTo }).eq("id", id);
+    if (error) { toast.error(error.message); return; }
+    setProspects((prev) => prev.map((p) => p.id === id ? { ...p, assigned_to: assignedTo } : p));
+  };
+
+  const assignableMembers = members.filter((member) => canReceiveProspects(member.role));
+  const memberById = new Map(members.map((member) => [member.id, member]));
+
   return (
     <div>
       <PageHeader title="Prospects" description={`${filtered.length} prospect${filtered.length > 1 ? "s" : ""} affiché${filtered.length > 1 ? "s" : ""}`}>
-        <Button
+        {admin && <Button
           variant="outline"
           size="sm"
           onClick={() => exportToCSV(filtered, "prospects", [
@@ -146,7 +199,7 @@ export default function Prospects() {
           disabled={filtered.length === 0}
         >
           <Download className="h-4 w-4" /> Export CSV
-        </Button>
+        </Button>}
         <div className="flex items-center gap-2 rounded-lg border border-border p-1">
           <Button variant={view === "table" ? "soft" : "ghost"} size="sm" onClick={() => setView("table")}>
             <List className="h-4 w-4" />
@@ -155,7 +208,7 @@ export default function Prospects() {
             <LayoutGrid className="h-4 w-4" />
           </Button>
         </div>
-        <NewProspectDialog open={open} onOpenChange={setOpen} onCreated={fetch} />
+        {admin && <NewProspectDialog open={open} onOpenChange={setOpen} onCreated={fetch} members={assignableMembers} />}
       </PageHeader>
 
       <div className="space-y-4 p-6">
@@ -188,6 +241,22 @@ export default function Prospects() {
             </p>
             <div className="flex items-center gap-2">
               <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>Annuler</Button>
+              <Select
+                onValueChange={(value) => assignProspects(Array.from(selectedIds), value === "none" ? null : value)}
+                disabled={assigning}
+              >
+                <SelectTrigger className="h-9 w-[220px]">
+                  <SelectValue placeholder={assigning ? "Assignation..." : "Assigner à"} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Non assigné</SelectItem>
+                  {assignableMembers.map((member) => (
+                    <SelectItem key={member.id} value={member.id}>
+                      {member.full_name ?? "Membre"} · {roleLabel(member.role)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Button variant="hero" size="sm" onClick={bulkAnalyze} disabled={bulkLoading}>
                 {bulkLoading ? <><Loader2 className="h-4 w-4 animate-spin" /> Analyse IA...</> : <><Zap className="h-4 w-4" /> Analyser avec l'IA</>}
               </Button>
@@ -199,10 +268,14 @@ export default function Prospects() {
           <div className="py-20 text-center text-muted-foreground">Chargement...</div>
         ) : filtered.length === 0 ? (
           <Card className="py-20 text-center">
-            <p className="text-muted-foreground">Aucun prospect — ajoutez-en un manuellement ou importez votre base.</p>
-            <Button variant="hero" className="mt-4" onClick={() => setOpen(true)}>
-              <Plus className="h-4 w-4" /> Ajouter un prospect
-            </Button>
+            <p className="text-muted-foreground">
+              {admin ? "Aucun prospect - ajoutez-en un manuellement ou importez votre base." : "Aucun prospect ne vous est assigne pour le moment."}
+            </p>
+            {admin && (
+              <Button variant="hero" className="mt-4" onClick={() => setOpen(true)}>
+                <Plus className="h-4 w-4" /> Ajouter un prospect
+              </Button>
+            )}
           </Card>
         ) : view === "table" ? (
           <Card className="overflow-hidden">
@@ -211,18 +284,19 @@ export default function Prospects() {
                 <thead className="bg-muted/50">
                   <tr className="text-left">
                     <th className="w-10 px-4 py-3">
-                      <Checkbox
+                      {admin && <Checkbox
                         checked={filtered.length > 0 && filtered.every((p) => selectedIds.has(p.id))}
                         onCheckedChange={(c) => {
                           if (c) setSelectedIds(new Set(filtered.map((p) => p.id)));
                           else setSelectedIds(new Set());
                         }}
-                      />
+                      />}
                     </th>
                     <th className="px-4 py-3 font-medium">Entreprise</th>
                     <th className="px-4 py-3 font-medium">Localisation</th>
                     <th className="px-4 py-3 font-medium">Secteur</th>
                     <th className="px-4 py-3 font-medium">Source</th>
+                    <th className="px-4 py-3 font-medium">Assigné</th>
                     <th className="px-4 py-3 font-medium">Contact</th>
                     <th className="px-4 py-3 font-medium">Statut</th>
                     <th className="px-4 py-3 font-medium" />
@@ -236,7 +310,7 @@ export default function Prospects() {
                       onClick={() => navigate(`/prospects/${p.id}`)}
                     >
                       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                        <Checkbox checked={selectedIds.has(p.id)} onCheckedChange={() => toggleSelect(p.id)} />
+                        {admin && <Checkbox checked={selectedIds.has(p.id)} onCheckedChange={() => toggleSelect(p.id)} />}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
@@ -258,6 +332,27 @@ export default function Prospects() {
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">{p.sector || "—"}</td>
                       <td className="px-4 py-3"><Badge variant="outline">{SOURCE_LABELS[p.source as Source]}</Badge></td>
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        {admin ? (
+                          <Select value={p.assigned_to ?? "none"} onValueChange={(value) => assignOne(p.id, value === "none" ? null : value)}>
+                            <SelectTrigger className="h-8 w-[170px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Non assigné</SelectItem>
+                              {assignableMembers.map((member) => (
+                                <SelectItem key={member.id} value={member.id}>
+                                  {member.full_name ?? "Membre"} · {roleLabel(member.role)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            {memberById.get(p.assigned_to)?.full_name ?? "Vous"}
+                          </span>
+                        )}
+                      </td>
                       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center gap-2">
                           {p.phone && <a href={`tel:${p.phone}`} className="text-muted-foreground hover:text-primary"><Phone className="h-3.5 w-3.5" /></a>}
@@ -298,15 +393,15 @@ export default function Prospects() {
   );
 }
 
-function NewProspectDialog({ open, onOpenChange, onCreated }: { open: boolean; onOpenChange: (v: boolean) => void; onCreated: () => void }) {
-  const [form, setForm] = useState({ name: "", email: "", phone: "", website: "", city: "", sector: "", source: "manual" as Source, notes: "" });
+function NewProspectDialog({ open, onOpenChange, onCreated, members }: { open: boolean; onOpenChange: (v: boolean) => void; onCreated: () => void; members: TeamMember[] }) {
+  const [form, setForm] = useState({ name: "", email: "", phone: "", website: "", city: "", sector: "", source: "manual" as Source, notes: "", assigned_to: "" });
   const [saving, setSaving] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     const { data: { user } } = await supabase.auth.getUser();
-    const { data, error } = await supabase.from("prospects").insert({ ...form, created_by: user?.id }).select("id, source").single();
+    const { data, error } = await supabase.from("prospects").insert({ ...form, assigned_to: form.assigned_to || null, created_by: user?.id }).select("id, source").single();
     setSaving(false);
     if (error) { toast.error(error.message); return; }
     if (data) {
@@ -320,7 +415,7 @@ function NewProspectDialog({ open, onOpenChange, onCreated }: { open: boolean; o
       });
     }
     toast.success("Prospect ajouté");
-    setForm({ name: "", email: "", phone: "", website: "", city: "", sector: "", source: "manual", notes: "" });
+    setForm({ name: "", email: "", phone: "", website: "", city: "", sector: "", source: "manual", notes: "", assigned_to: "" });
     onOpenChange(false);
     onCreated();
   };
@@ -357,6 +452,20 @@ function NewProspectDialog({ open, onOpenChange, onCreated }: { open: boolean; o
             <div className="space-y-1.5">
               <Label>Secteur</Label>
               <Input value={form.sector} onChange={(e) => setForm({ ...form, sector: e.target.value })} placeholder="Restauration, BTP..." />
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label>Assigner à</Label>
+              <Select value={form.assigned_to || "none"} onValueChange={(value) => setForm({ ...form, assigned_to: value === "none" ? "" : value })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Non assigné</SelectItem>
+                  {members.map((member) => (
+                    <SelectItem key={member.id} value={member.id}>
+                      {member.full_name ?? "Membre"} · {roleLabel(member.role)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5">
               <Label>Source</Label>

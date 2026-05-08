@@ -22,6 +22,7 @@ export default function Auth() {
   const navigate = useNavigate();
   const { session, loading: authLoading } = useAuth();
   const demoEnabled = import.meta.env.VITE_ENABLE_DEMO_MODE === "true";
+  const signupEnabled = import.meta.env.VITE_ENABLE_PUBLIC_SIGNUP === "true";
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -113,9 +114,9 @@ export default function Auth() {
               </div>
 
               <Tabs defaultValue="signin">
-                <TabsList className="grid w-full grid-cols-2">
+                <TabsList className={signupEnabled ? "grid w-full grid-cols-2" : "grid w-full grid-cols-1"}>
                   <TabsTrigger value="signin">Connexion</TabsTrigger>
-                  <TabsTrigger value="signup">Inscription</TabsTrigger>
+                  {signupEnabled && <TabsTrigger value="signup">Inscription</TabsTrigger>}
                 </TabsList>
 
                 <TabsContent value="signin">
@@ -137,28 +138,30 @@ export default function Auth() {
                   </form>
                 </TabsContent>
 
-                <TabsContent value="signup">
-                  <form onSubmit={handleSignUp} className="space-y-4 pt-5">
-                    <div className="space-y-2">
-                      <Label htmlFor="name">Nom complet</Label>
-                      <Input id="name" required value={fullName}
-                        onChange={(e) => setFullName(e.target.value)} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="email-up">Email</Label>
-                      <Input id="email-up" type="email" required value={email}
-                        onChange={(e) => setEmail(e.target.value)} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="password-up">Mot de passe</Label>
-                      <Input id="password-up" type="password" required minLength={6} value={password}
-                        onChange={(e) => setPassword(e.target.value)} />
-                    </div>
-                    <Button type="submit" disabled={loading} variant="hero" size="lg" className="w-full">
-                      {loading ? "Création..." : "Créer mon compte"}
-                    </Button>
-                  </form>
-                </TabsContent>
+                {signupEnabled && (
+                  <TabsContent value="signup">
+                    <form onSubmit={handleSignUp} className="space-y-4 pt-5">
+                      <div className="space-y-2">
+                        <Label htmlFor="name">Nom complet</Label>
+                        <Input id="name" required value={fullName}
+                          onChange={(e) => setFullName(e.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="email-up">Email</Label>
+                        <Input id="email-up" type="email" required value={email}
+                          onChange={(e) => setEmail(e.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="password-up">Mot de passe</Label>
+                        <Input id="password-up" type="password" required minLength={6} value={password}
+                          onChange={(e) => setPassword(e.target.value)} />
+                      </div>
+                      <Button type="submit" disabled={loading} variant="hero" size="lg" className="w-full">
+                        {loading ? "Création..." : "Créer mon compte"}
+                      </Button>
+                    </form>
+                  </TabsContent>
+                )}
               </Tabs>
 
               {demoEnabled && (
@@ -185,13 +188,13 @@ export default function Auth() {
                     Explorer en mode démo
                   </Button>
                   <p className="text-center text-xs text-muted-foreground">
-                    Le premier compte créé devient admin automatiquement.
+                    Les accès membres sont créés par un administrateur.
                   </p>
                 </div>
               )}
               {!demoEnabled && (
                 <p className="text-center text-xs text-muted-foreground">
-                  Le premier compte créé devient admin automatiquement.
+                  Les accès membres sont créés par un administrateur.
                 </p>
               )}
             </Card>

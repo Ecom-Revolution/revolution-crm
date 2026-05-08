@@ -10,10 +10,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
-import { Settings as SettingsIcon, Save, Users, Key, Loader2, Shield, Check, X, TestTube2, Sparkles, PlugZap } from "lucide-react";
+import { Settings as SettingsIcon, Save, Users, Key, Loader2, Shield, Check, X, TestTube2, Sparkles, PlugZap, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { AI_PROVIDER_CATALOG, FREE_SMMA_TOOLS, INTEGRATION_CHOICES } from "@/lib/integrations";
+import { roleLabel } from "@/lib/access";
 
 interface Member { user_id: string; full_name: string | null; email?: string; role: string; }
 interface IntegrationRow {
@@ -70,6 +71,8 @@ export default function Parametres() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [creatingMember, setCreatingMember] = useState(false);
+  const [memberDraft, setMemberDraft] = useState({ email: "", password: "", full_name: "", phone: "", role: "setter" });
   const [integrationRows, setIntegrationRows] = useState<IntegrationRow[]>([]);
   const [integrationStatuses, setIntegrationStatuses] = useState<IntegrationStatus[]>([]);
   const [drafts, setDrafts] = useState<Record<string, IntegrationDraft>>({});
@@ -141,6 +144,23 @@ export default function Parametres() {
     const { error } = await supabase.from("user_roles").update({ role: role as any }).eq("user_id", userId);
     if (error) { toast.error(error.message); return; }
     toast.success("Role mis a jour");
+    load();
+  };
+
+  const createMember = async () => {
+    if (!isAdmin) { toast.error("Reserve aux admins"); return; }
+    if (!memberDraft.email || !memberDraft.password || !memberDraft.full_name) {
+      toast.error("Nom, email et mot de passe requis");
+      return;
+    }
+
+    setCreatingMember(true);
+    const { data, error } = await supabase.functions.invoke("admin-create-member", { body: memberDraft });
+    setCreatingMember(false);
+
+    if (error || data?.error) { toast.error(data?.error ?? error?.message ?? "Creation impossible"); return; }
+    toast.success("Acces membre cree");
+    setMemberDraft({ email: "", password: "", full_name: "", phone: "", role: "setter" });
     load();
   };
 
@@ -227,6 +247,53 @@ export default function Parametres() {
           </TabsContent>
 
           <TabsContent value="team">
+            {isAdmin && (
+              <Card className="mb-4 p-5">
+                <div className="mb-4 flex items-center gap-2">
+                  <UserPlus className="h-4 w-4 text-primary" />
+                  <div>
+                    <h2 className="font-semibold">Creer un espace membre</h2>
+                    <p className="text-sm text-muted-foreground">Setter et closer verront uniquement les prospects que vous leur assignez.</p>
+                  </div>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="grid gap-2">
+                    <Label>Nom complet</Label>
+                    <Input value={memberDraft.full_name} onChange={(e) => setMemberDraft((p) => ({ ...p, full_name: e.target.value }))} placeholder="Jalal Boudchar" />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Email</Label>
+                    <Input type="email" value={memberDraft.email} onChange={(e) => setMemberDraft((p) => ({ ...p, email: e.target.value }))} placeholder="membre@revolution..." />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Mot de passe temporaire</Label>
+                    <Input value={memberDraft.password} onChange={(e) => setMemberDraft((p) => ({ ...p, password: e.target.value }))} placeholder="Revolution123!" />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Telephone</Label>
+                    <Input value={memberDraft.phone} onChange={(e) => setMemberDraft((p) => ({ ...p, phone: e.target.value }))} placeholder="06..." />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Role</Label>
+                    <Select value={memberDraft.role} onValueChange={(role) => setMemberDraft((p) => ({ ...p, role }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="setter">Setter</SelectItem>
+                        <SelectItem value="closer">Closer</SelectItem>
+                        <SelectItem value="admin">Admin</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-end">
+                    <Button variant="hero" onClick={createMember} disabled={creatingMember} className="w-full">
+                      {creatingMember ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
+                      Creer l'acces
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            )}
+
             <Card className="overflow-hidden">
               <div className="border-b border-border bg-muted/40 px-4 py-3 flex items-center gap-2">
                 <Shield className="h-4 w-4 text-primary" />
@@ -255,7 +322,7 @@ export default function Parametres() {
                               </SelectContent>
                             </Select>
                           ) : (
-                            <Badge>{m.role}</Badge>
+                            <Badge>{roleLabel(m.role)}</Badge>
                           )}
                         </td>
                       </tr>

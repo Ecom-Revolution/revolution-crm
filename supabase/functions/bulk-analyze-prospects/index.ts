@@ -2,6 +2,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
+import { assertAdminRole } from "../_shared/auth.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -13,6 +14,9 @@ Deno.serve(async (req) => {
     });
     const { data: { user } } = await userClient.auth.getUser();
     if (!user) return jsonResponse({ error: "Unauthorized" }, 401);
+    const admin = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const access = await assertAdminRole(admin, user.id);
+    if (!access.ok) return jsonResponse({ error: access.error }, access.status);
 
     const { prospect_ids } = await req.json() as { prospect_ids: string[] };
     if (!Array.isArray(prospect_ids) || prospect_ids.length === 0) return jsonResponse({ error: "prospect_ids[] required" }, 400);

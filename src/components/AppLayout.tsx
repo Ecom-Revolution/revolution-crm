@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, Briefcase, Bot, FileSearch,
   Megaphone, Receipt, Calendar, Settings, LogOut, Radar,
@@ -13,6 +13,8 @@ import { Logo } from "@/components/Logo";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { CommandPalette } from "@/components/CommandPalette";
 import { NotificationsBell } from "@/components/NotificationsBell";
+import { canAccessPath, isAdminRole, roleLabel } from "@/lib/access";
+import { useCurrentRole } from "@/hooks/useCurrentRole";
 
 const nav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
@@ -30,10 +32,12 @@ const nav = [
   { to: "/agenda", label: "Agenda", icon: Calendar },
 ];
 
-function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
+function NavLinks({ onNavigate, role }: { onNavigate?: () => void; role?: string | null }) {
+  const visibleNav = isAdminRole(role) ? nav : nav.filter((item) => item.to === "/prospects");
+
   return (
     <nav className="flex-1 space-y-1 px-3 py-4">
-      {nav.map((item, i) => (
+      {visibleNav.map((item, i) => (
         <NavLink
           key={item.to}
           to={item.to}
@@ -67,6 +71,8 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
 export default function AppLayout() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const { role, loading: roleLoading } = useCurrentRole();
   const [profile, setProfile] = useState<{ full_name?: string | null; avatar_url?: string | null } | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -76,6 +82,11 @@ export default function AppLayout() {
     supabase.from("profiles").select("full_name, avatar_url").eq("id", user.id).maybeSingle()
       .then(({ data }) => setProfile(data));
   }, [user]);
+
+  useEffect(() => {
+    if (roleLoading || !role) return;
+    if (!canAccessPath(role, location.pathname)) navigate("/prospects", { replace: true });
+  }, [location.pathname, navigate, role, roleLoading]);
 
   const handleSignOut = async () => {
     await signOut();
@@ -93,29 +104,31 @@ export default function AppLayout() {
         <Logo size="h-12" glow />
       </div>
 
-      <NavLinks onNavigate={onNavigate} />
+      <NavLinks onNavigate={onNavigate} role={role} />
 
       <div className="border-t border-sidebar-border p-3">
-        <NavLink
-          to="/parametres"
-          onClick={onNavigate}
-          className={({ isActive }) =>
-            cn(
-              "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all",
-              isActive ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground hover:bg-sidebar-accent/50",
-            )
-          }
-        >
-          <Settings className="h-4 w-4" />
-          Paramètres
-        </NavLink>
+        {isAdminRole(role) && (
+          <NavLink
+            to="/parametres"
+            onClick={onNavigate}
+            className={({ isActive }) =>
+              cn(
+                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all",
+                isActive ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground hover:bg-sidebar-accent/50",
+              )
+            }
+          >
+            <Settings className="h-4 w-4" />
+            Paramètres
+          </NavLink>
+        )}
         <div className="mt-3 flex items-center gap-3 rounded-lg p-2">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full gradient-primary text-sm font-semibold text-primary-foreground shadow-glow">
             {initials}
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-sidebar-foreground">{profile?.full_name || user?.email}</p>
-            <p className="truncate text-xs text-muted-foreground">{user?.email}</p>
+            <p className="truncate text-xs text-muted-foreground">{roleLabel(role)} · {user?.email}</p>
           </div>
           <Button variant="ghost" size="icon" onClick={handleSignOut} title="Se déconnecter">
             <LogOut className="h-4 w-4" />

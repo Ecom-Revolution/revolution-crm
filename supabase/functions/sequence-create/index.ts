@@ -4,6 +4,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
 import { generateSequenceMessage, SUPPORTED_OUTREACH_CHANNELS } from "../_shared/outreach.ts";
+import { assertProspectAccess } from "../_shared/auth.ts";
 
 const RELAY_DELAYS_DAYS = [3, 4, 7];
 
@@ -26,8 +27,9 @@ Deno.serve(async (req) => {
     if (!SUPPORTED_OUTREACH_CHANNELS.includes(channel)) return jsonResponse({ error: "Canal non supporté" }, 400);
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
-    const { data: prospect } = await admin.from("prospects").select("*").eq("id", prospect_id).maybeSingle();
-    if (!prospect) return jsonResponse({ error: "Prospect introuvable" }, 404);
+    const access = await assertProspectAccess(admin, prospect_id, user.id);
+    if (!access.ok) return jsonResponse({ error: access.error }, access.status);
+    const prospect = access.prospect;
 
     const { data: existing } = await admin
       .from("outreach_sequences")

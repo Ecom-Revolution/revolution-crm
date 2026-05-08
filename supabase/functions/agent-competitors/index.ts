@@ -4,6 +4,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
 import { callAI } from "../_shared/ai.ts";
+import { assertProspectAccess } from "../_shared/auth.ts";
 
 async function ddgSearch(query: string): Promise<{ title: string; url: string; snippet: string }[]> {
   try {
@@ -34,8 +35,9 @@ Deno.serve(async (req) => {
 
     const { prospect_id } = await req.json() as { prospect_id: string };
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
-    const { data: p } = await admin.from("prospects").select("*").eq("id", prospect_id).single();
-    if (!p) return jsonResponse({ error: "Prospect introuvable" }, 404);
+    const access = await assertProspectAccess(admin, prospect_id, user.id);
+    if (!access.ok) return jsonResponse({ error: access.error }, access.status);
+    const p = access.prospect;
 
     const sector = p.sector ?? p.category ?? "entreprise";
     const city = p.city ?? "";

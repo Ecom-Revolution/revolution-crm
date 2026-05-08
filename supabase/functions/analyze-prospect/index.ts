@@ -4,6 +4,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
 import { callAI } from "../_shared/ai.ts";
+import { assertProspectAccess } from "../_shared/auth.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -23,8 +24,9 @@ Deno.serve(async (req) => {
     if (!prospect_id) return jsonResponse({ error: "prospect_id required" }, 400);
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
-    const { data: prospect, error } = await admin.from("prospects").select("*").eq("id", prospect_id).single();
-    if (error || !prospect) return jsonResponse({ error: "Prospect not found" }, 404);
+    const access = await assertProspectAccess(admin, prospect_id, user.id);
+    if (!access.ok) return jsonResponse({ error: access.error }, access.status);
+    const prospect = access.prospect;
 
     const context = `
 Entreprise : ${prospect.name}

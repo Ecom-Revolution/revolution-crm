@@ -6,6 +6,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
 import { callAI } from "../_shared/ai.ts";
 import { startActivity, finishActivity } from "../_shared/activity.ts";
+import { assertProspectAccess } from "../_shared/auth.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -28,8 +29,9 @@ Deno.serve(async (req) => {
       prospect_id: string; tone?: string; objective?: string;
     };
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
-    const { data: p } = await admin.from("prospects").select("*").eq("id", prospect_id).single();
-    if (!p) return jsonResponse({ error: "Prospect introuvable" }, 404);
+    const access = await assertProspectAccess(admin, prospect_id, user.id);
+    if (!access.ok) return jsonResponse({ error: access.error }, access.status);
+    const p = access.prospect;
 
     activityId = await startActivity({
       userId, category: "agent", action: "agent-closer",

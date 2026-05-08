@@ -49,6 +49,32 @@ export async function assertJobOwner(admin: ReturnType<typeof getAdminClient>, j
   return { ok: true as const, job };
 }
 
+export async function assertAdminRole(admin: ReturnType<typeof getAdminClient>, userId: string) {
+  const { data, error } = await admin
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", userId)
+    .eq("role", "admin")
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data) return { ok: false as const, status: 403, error: "Admin role required" };
+  return { ok: true as const };
+}
+
+export async function assertProspectAccess(admin: ReturnType<typeof getAdminClient>, prospectId: string, userId: string) {
+  const [{ data: roleRow, error: roleError }, { data: prospect, error: prospectError }] = await Promise.all([
+    admin.from("user_roles").select("role").eq("user_id", userId).maybeSingle(),
+    admin.from("prospects").select("*").eq("id", prospectId).maybeSingle(),
+  ]);
+
+  if (roleError) throw new Error(roleError.message);
+  if (prospectError) throw new Error(prospectError.message);
+  if (!prospect) return { ok: false as const, status: 404, error: "Prospect not found" };
+  if (roleRow?.role === "admin" || prospect.assigned_to === userId) return { ok: true as const, prospect };
+  return { ok: false as const, status: 403, error: "Forbidden" };
+}
+
 export async function requireAdminOrCron(req: Request): Promise<{ ok: true } | Response> {
   const cronSecret = Deno.env.get("CRON_SECRET");
   const providedSecret = req.headers.get("x-cron-secret");
@@ -58,15 +84,8 @@ export async function requireAdminOrCron(req: Request): Promise<{ ok: true } | R
   if (auth instanceof Response) return auth;
 
   const admin = getAdminClient();
-  const { data, error } = await admin
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", auth.user.id)
-    .eq("role", "admin")
-    .maybeSingle();
-
-  if (error) throw new Error(error.message);
-  if (!data) {
+  const access = await assertAdminRole(admin, auth.user.id);
+  if (!access.ok) {
     return jsonResponse({ error: "Admin role or valid cron secret required" }, 403);
   }
 

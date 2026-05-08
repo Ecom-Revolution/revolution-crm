@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   ArrowLeft, Sparkles, ExternalLink, Phone, Mail, MapPin, Globe, Building2,
   Star, Users, TrendingUp, AlertTriangle, CheckCircle2, Loader2, Copy,
@@ -18,6 +19,8 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { logFunnelEvent } from "@/lib/funnelEvents";
 import { functionErrorMessage } from "@/lib/functionErrors";
+import { useCurrentRole } from "@/hooks/useCurrentRole";
+import { canReceiveProspects, isAdminRole, roleLabel } from "@/lib/access";
 
 const CHANNELS = [
   { id: "email", label: "Email", icon: Mail, color: "text-blue-400" },
@@ -33,10 +36,19 @@ const PRIORITY_COLOR: Record<string, string> = {
   low: "bg-muted text-muted-foreground",
 };
 
+interface TeamMember {
+  id: string;
+  full_name: string | null;
+  role: string;
+}
+
 export default function ProspectDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { role } = useCurrentRole();
+  const admin = isAdminRole(role);
   const [prospect, setProspect] = useState<any>(null);
+  const [members, setMembers] = useState<TeamMember[]>([]);
   const [messages, setMessages] = useState<any[]>([]);
   const [sequences, setSequences] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,7 +79,24 @@ export default function ProspectDetail() {
     setLoading(false);
   };
 
+  const loadMembers = async () => {
+    if (!admin) { setMembers([]); return; }
+    const [{ data: roles }, { data: profiles }] = await Promise.all([
+      supabase.from("user_roles").select("user_id, role").in("role", ["setter", "closer"]),
+      supabase.from("profiles").select("id, full_name"),
+    ]);
+    const list = (roles ?? [])
+      .filter((item) => canReceiveProspects(item.role))
+      .map((item) => ({
+        id: item.user_id,
+        role: item.role,
+        full_name: profiles?.find((profile) => profile.id === item.user_id)?.full_name ?? null,
+      }));
+    setMembers(list);
+  };
+
   useEffect(() => { load(); }, [id]);
+  useEffect(() => { loadMembers(); }, [admin]);
 
   // Charge le dernier brouillon du canal actif dans l'éditeur
   useEffect(() => {
@@ -240,6 +269,14 @@ export default function ProspectDetail() {
     window.open(url, "_blank");
   };
 
+  const assignProspect = async (assignedTo: string | null) => {
+    if (!admin || !id) return;
+    const { error } = await supabase.from("prospects").update({ assigned_to: assignedTo }).eq("id", id);
+    if (error) { toast.error(error.message); return; }
+    setProspect((prev: any) => prev ? { ...prev, assigned_to: assignedTo } : prev);
+    toast.success(assignedTo ? "Prospect assigne" : "Assignation retiree");
+  };
+
   if (loading) {
     return <div className="p-6 space-y-4"><Skeleton className="h-8 w-64" /><Skeleton className="h-32 w-full" /><Skeleton className="h-64 w-full" /></div>;
   }
@@ -256,6 +293,21 @@ export default function ProspectDetail() {
         <Button variant="ghost" onClick={() => navigate("/prospects")}>
           <ArrowLeft className="h-4 w-4" /> Retour
         </Button>
+        {admin && (
+          <Select value={prospect.assigned_to ?? "none"} onValueChange={(value) => assignProspect(value === "none" ? null : value)}>
+            <SelectTrigger className="w-[220px]">
+              <SelectValue placeholder="Assigner" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Non assigne</SelectItem>
+              {members.map((member) => (
+                <SelectItem key={member.id} value={member.id}>
+                  {member.full_name ?? "Membre"} · {roleLabel(member.role)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <Button variant="outline" size="sm" onClick={runCompetitors} disabled={compLoading}>
           {compLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Swords className="h-4 w-4" />}
           Concurrents

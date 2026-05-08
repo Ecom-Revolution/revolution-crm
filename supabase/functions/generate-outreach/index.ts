@@ -7,6 +7,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
 import { callAI } from "../_shared/ai.ts";
 import { startActivity, finishActivity } from "../_shared/activity.ts";
+import { assertProspectAccess } from "../_shared/auth.ts";
 
 const CHANNEL_RULES: Record<string, string> = {
   email: "Email pro 90-150 mots. Objet accrocheur (max 50 char). Personnalisé avec un détail concret. Pas de jargon. CTA clair (proposer un call 15min). Signature simple.",
@@ -40,8 +41,9 @@ Deno.serve(async (req) => {
     if (!CHANNEL_RULES[channel]) return jsonResponse({ error: "Invalid channel" }, 400);
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
-    const { data: prospect, error } = await admin.from("prospects").select("*").eq("id", prospect_id).single();
-    if (error || !prospect) return jsonResponse({ error: "Prospect not found" }, 404);
+    const access = await assertProspectAccess(admin, prospect_id, user.id);
+    if (!access.ok) return jsonResponse({ error: access.error }, access.status);
+    const prospect = access.prospect;
 
     activityId = await startActivity({
       userId: user.id,
